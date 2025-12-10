@@ -52,6 +52,15 @@ const QuizScreen = () => {
       series_no
     );
     setQuestions(questionsData);
+    
+    // 載入上次的進度，如果有的話
+    const savedIndex = await QuestionService.getQuizProgressByKey(testName, subject, series_no);
+    if (savedIndex !== null && savedIndex >= 0 && savedIndex < questionsData.length) {
+      setCurrentIndex(savedIndex);
+    } else {
+      setCurrentIndex(0);
+    }
+    
     setLoading(false);
   };
 
@@ -62,6 +71,19 @@ const QuizScreen = () => {
     const answers = await QuestionService.getUserAnswers();
     setUserAnswers(answers);
     const answer = answers[currentQuestion.id];
+    
+    // 如果題目已經答過，恢復之前的狀態
+    if (answer?.isAnswered) {
+      setSelectedAnswer(answer.selectedAnswer || null);
+      setShowResult(true);
+      setIsCorrect(answer.isCorrect || false);
+    } else {
+      // 如果題目未答過，重置狀態
+      setSelectedAnswer(null);
+      setShowResult(false);
+      setIsCorrect(false);
+    }
+    
     setIsUncertain(answer?.isUncertain || false);
     setIsInWrongBook(answer?.isInWrongBook || false);
   };
@@ -76,10 +98,11 @@ const QuizScreen = () => {
     setIsCorrect(correct);
     setShowResult(true);
 
-    // 更新答題記錄
+    // 更新答題記錄，保存選擇的答案
     await QuestionService.updateUserAnswer(currentQuestion.id, {
       isCorrect: correct,
       isAnswered: true,
+      selectedAnswer: option,
     });
 
     // 如果答錯，自動加入錯題本
@@ -88,6 +111,9 @@ const QuizScreen = () => {
         isInWrongBook: true,
       });
     }
+
+    // 保存當前進度
+    await QuestionService.saveQuizProgress(testName, subject, series_no, currentIndex);
 
     // 重新載入用戶答案
     await loadUserAnswer();
@@ -162,19 +188,23 @@ const QuizScreen = () => {
     // });
   };
 
-  const handlePrevious = () => {
+  const handlePrevious = async () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-      setSelectedAnswer(null);
-      setShowResult(false);
+      const newIndex = currentIndex - 1;
+      setCurrentIndex(newIndex);
+      // 保存進度
+      await QuestionService.saveQuizProgress(testName, subject, series_no, newIndex);
+      // 不重置狀態，讓 loadUserAnswer 來恢復狀態
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setSelectedAnswer(null);
-      setShowResult(false);
+      const newIndex = currentIndex + 1;
+      setCurrentIndex(newIndex);
+      // 保存進度
+      await QuestionService.saveQuizProgress(testName, subject, series_no, newIndex);
+      // 不重置狀態，讓 loadUserAnswer 來恢復狀態
     }
   };
 
@@ -214,6 +244,8 @@ const QuizScreen = () => {
           // 更新進度以確保列表顯示最新分數
           await QuestionService.updateProgress();
         }
+        // 清除測驗進度（因為已經結束測驗）
+        await QuestionService.clearQuizProgress(testName, subject, series_no);
         navigation.goBack();
       }
     } else {
@@ -228,6 +260,8 @@ const QuizScreen = () => {
               // 更新進度以確保列表顯示最新分數
               await QuestionService.updateProgress();
             }
+            // 清除測驗進度（因為已經結束測驗）
+            await QuestionService.clearQuizProgress(testName, subject, series_no);
             navigation.goBack();
           },
         },
@@ -264,14 +298,10 @@ const QuizScreen = () => {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* 顯示題號 */}
-        <View style={styles.questionNumberContainer}>
-          <Text style={styles.questionNumberText}>
-            第 {currentQuestion.questionNumber || (currentIndex + 1)} 題
-          </Text>
-        </View>
-        
-        <Text style={styles.questionText}>{currentQuestion.content}</Text>
+        {/* 顯示題號和題目內容 */}
+        <Text style={styles.questionText}>
+          {currentQuestion.questionNumber || (currentIndex + 1)}. {currentQuestion.content}
+        </Text>
 
         {(['A', 'B', 'C', 'D'] as const).map((option) => {
           const optionText = currentQuestion.options[option];
@@ -437,11 +467,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: 12,
   },
   questionNumberContainer: {
-    marginBottom: 12,
-    paddingBottom: 8,
+    marginBottom: 8,
+    paddingBottom: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
@@ -454,16 +484,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#000000',
-    marginBottom: 24,
-    lineHeight: 28,
+    marginBottom: 16,
+    lineHeight: 26,
   },
   optionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
+    padding: 8,
+    marginBottom: 6,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -483,7 +513,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#000000',
-    marginRight: 12,
+    marginRight: 8,
     minWidth: 30,
   },
   optionText: {
@@ -493,8 +523,8 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   resultContainer: {
-    marginTop: 24,
-    padding: 16,
+    marginTop: 16,
+    padding: 12,
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
   },
@@ -562,15 +592,15 @@ const styles = StyleSheet.create({
   bottomActionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 24,
+    marginTop: 8,
     paddingHorizontal: 4,
-    gap: 8,
+    gap: 4,
   },
   bottomActionButton: {
     flex: 1,
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
-    paddingVertical: 12,
+    paddingVertical: 4,
     paddingHorizontal: 8,
     alignItems: 'center',
     borderWidth: 1,

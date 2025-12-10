@@ -22,6 +22,7 @@ export interface UserAnswer {
   questionId: string;
   isCorrect: boolean;            // 是否答對
   isAnswered: boolean;           // 是否已作答
+  selectedAnswer?: 'A' | 'B' | 'C' | 'D';  // 用戶選擇的答案
   isFavorite: boolean;           // 是否收藏
   isInWrongBook: boolean;        // 是否在錯題本
   isUncertain: boolean;          // 是否不確定

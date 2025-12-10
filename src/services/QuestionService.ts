@@ -8,6 +8,7 @@ const DATA_VERSION_KEY = '@quiz:dataVersion';
 const TEST_NAMES_KEY = '@quiz:testNames';
 const SUBJECTS_KEY = '@quiz:subjects';
 const SERIES_KEY = '@quiz:series';
+const QUIZ_PROGRESS_KEY = '@quiz:quizProgress'; // 保存測驗進度
 
 // 索引資料結構
 interface IndexData {
@@ -225,6 +226,7 @@ class QuestionService {
         questionId,
         isCorrect: false,
         isAnswered: false,
+        selectedAnswer: undefined,
         isFavorite: false,
         isInWrongBook: false,
         isUncertain: false,
@@ -267,6 +269,7 @@ class QuestionService {
         questionId,
         isCorrect: false,
         isAnswered: false,
+        selectedAnswer: undefined,
         isFavorite: false,
         isInWrongBook: false,
         isUncertain: false,
@@ -294,6 +297,7 @@ class QuestionService {
         questionId,
         isCorrect: false,
         isAnswered: false,
+        selectedAnswer: undefined,
         isFavorite: false,
         isInWrongBook: false,
         isUncertain: false,
@@ -749,6 +753,66 @@ class QuestionService {
       }
     } catch (error) {
       console.error('保存測驗分數失敗:', error);
+    }
+  }
+
+  // 保存測驗進度（當前題目索引）
+  async saveQuizProgress(
+    testName: string,
+    subject: string,
+    series_no: string,
+    currentIndex: number
+  ): Promise<void> {
+    try {
+      const progressData = await this.getQuizProgress();
+      const quizKey = `${testName}_${subject}_${series_no}`;
+      progressData[quizKey] = currentIndex;
+      await AsyncStorage.setItem(QUIZ_PROGRESS_KEY, JSON.stringify(progressData));
+    } catch (error) {
+      console.error('保存測驗進度失敗:', error);
+    }
+  }
+
+  // 取得測驗進度（當前題目索引）
+  async getQuizProgress(): Promise<Record<string, number>> {
+    try {
+      const data = await AsyncStorage.getItem(QUIZ_PROGRESS_KEY);
+      return data ? JSON.parse(data) : {};
+    } catch (error) {
+      console.error('取得測驗進度失敗:', error);
+      return {};
+    }
+  }
+
+  // 取得特定測驗的進度
+  async getQuizProgressByKey(
+    testName: string,
+    subject: string,
+    series_no: string
+  ): Promise<number | null> {
+    try {
+      const progressData = await this.getQuizProgress();
+      const quizKey = `${testName}_${subject}_${series_no}`;
+      return progressData[quizKey] ?? null;
+    } catch (error) {
+      console.error('取得測驗進度失敗:', error);
+      return null;
+    }
+  }
+
+  // 清除測驗進度（當測驗完成時）
+  async clearQuizProgress(
+    testName: string,
+    subject: string,
+    series_no: string
+  ): Promise<void> {
+    try {
+      const progressData = await this.getQuizProgress();
+      const quizKey = `${testName}_${subject}_${series_no}`;
+      delete progressData[quizKey];
+      await AsyncStorage.setItem(QUIZ_PROGRESS_KEY, JSON.stringify(progressData));
+    } catch (error) {
+      console.error('清除測驗進度失敗:', error);
     }
   }
 }
