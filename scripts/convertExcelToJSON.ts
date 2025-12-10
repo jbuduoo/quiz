@@ -94,6 +94,8 @@ function mapExcelRowToQuestion(row: ExcelRow, index: number): Question {
   const explanation = String(row['詳解'] || row['解析'] || row['explanation'] || row['說明'] || '').trim();
   const subject = String(row['科目'] || row['subject'] || row['類別'] || '理財規劃人員').trim();
   const chapter = String(row['章節'] || row['chapter'] || row['單元'] || row['類別'] || '專業能力').trim();
+  const testName = String(row['測驗名稱'] || row['testName'] || row['測驗'] || '理財規劃人員').trim();
+  const series_no = String(row['期數'] || row['series_no'] || row['期'] || row['屆'] || '').trim();
   
   return {
     id,
@@ -106,7 +108,9 @@ function mapExcelRowToQuestion(row: ExcelRow, index: number): Question {
     },
     correctAnswer: correctAnswer as 'A' | 'B' | 'C' | 'D',
     explanation,
+    testName,
     subject,
+    series_no,
     chapter,
   };
 }
