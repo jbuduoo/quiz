@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# data/questions directory (created to prevent Metro scanning errors)
+/data/questions/*
+!/data/questions/.gitkeep

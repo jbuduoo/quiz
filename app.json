@@ -9,7 +9,8 @@
     "newArchEnabled": true,
     "assetBundlePatterns": [
       "**/*",
-      "assets/data/*.json"
+      "assets/data/**/*.json",
+      "assets/data/questions/**/*.json"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",

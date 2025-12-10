@@ -1,0 +1,3 @@
+# This directory is created to prevent Metro Bundler from scanning errors
+# The actual question files are stored in assets/data/questions/
+
