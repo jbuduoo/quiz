@@ -88,28 +88,8 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
   }
   
   try {
-    // 在 Web 平台，優先使用 fetch
-    if (typeof window !== 'undefined') {
-      try {
-        const response = await fetch(`/assets/data/${filePath}`);
-        if (response.ok) {
-          const data = await response.json() as QuestionFileData;
-          if (data && data.questions) {
-            // 為每個題目添加題號
-            data.questions.forEach((q, index) => {
-              q.questionNumber = index + 1;
-            });
-            questionCache.set(filePath, data.questions);
-            console.log(`✅ 從 Web 載入題目檔案: ${filePath} (${data.questions.length} 題)`);
-            return data.questions;
-          }
-        }
-      } catch (fetchError) {
-        console.warn(`無法使用 fetch 載入題目檔案 ${filePath}:`, fetchError);
-      }
-    }
-    
-    // 在 React Native 平台，使用映射表
+    // 優先使用映射表載入（適用於所有平台，包括 Web）
+    // Metro Bundler 會自動處理資源打包，無需使用 fetch
     if (questionFileMap[filePath]) {
       try {
         const questionModule = questionFileMap[filePath]() as QuestionFileData;
@@ -127,6 +107,27 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
       }
     } else {
       console.warn(`找不到題目檔案映射: ${filePath}`);
+    }
+    
+    // 如果映射表載入失敗，在 Web 平台嘗試使用 fetch（作為備用方案）
+    if (typeof window !== 'undefined') {
+      try {
+        const response = await fetch(`/assets/data/${filePath}`);
+        if (response.ok) {
+          const data = await response.json() as QuestionFileData;
+          if (data && data.questions) {
+            // 為每個題目添加題號
+            data.questions.forEach((q, index) => {
+              q.questionNumber = index + 1;
+            });
+            questionCache.set(filePath, data.questions);
+            console.log(`✅ 從 Web fetch 載入題目檔案: ${filePath} (${data.questions.length} 題)`);
+            return data.questions;
+          }
+        }
+      } catch (fetchError) {
+        // 靜默失敗，因為已經嘗試過映射表載入
+      }
     }
     
     return [];
