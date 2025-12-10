@@ -92,8 +92,62 @@ npm start
 
 3. 在模擬器、實體裝置或瀏覽器上執行：
 - **Web (瀏覽器)**：按 `w` 鍵或執行 `npm run web`，然後在瀏覽器中開啟顯示的網址（通常是 `http://localhost:8081`）
-- **iOS**：按 `i` 鍵或執行 `npm run ios`
-- **Android**：按 `a` 鍵或執行 `npm run android`
+- **iOS 模擬器**：按 `i` 鍵或執行 `npm run ios`（僅限 macOS）
+- **Android 模擬器**：按 `a` 鍵或執行 `npm run android`
+- **iOS 實體裝置（使用 Expo Go）**：見下方說明
+- **Android 實體裝置（使用 Expo Go）**：見下方說明
+
+### 📱 使用 Expo Go 連接實體裝置
+
+#### iOS 手機連接步驟
+
+1. **安裝 Expo Go App**
+   - 在 iPhone 的 App Store 搜尋並安裝「Expo Go」
+
+2. **啟動開發伺服器**
+   ```bash
+   npm start
+   # 或使用 LAN 模式（推薦）
+   npx expo start --lan
+   ```
+
+3. **確保網路連接**
+   - iPhone 和電腦必須連接到**同一個 Wi-Fi 網路**
+   - iPhone 請關閉行動數據，避免自動切換網路
+
+4. **連接應用程式**
+   - **方法 A：掃描 QR Code**（推薦）
+     1. 打開 iPhone 上的 Expo Go App
+     2. 點擊「Scan QR Code」
+     3. 掃描終端中顯示的 QR Code
+   - **方法 B：手動輸入地址**
+     1. 打開 Expo Go App
+     2. 點擊「Enter URL manually」
+     3. 輸入終端顯示的 `exp://` 地址（例如：`exp://172.20.10.5:8081`）
+
+5. **連接模式說明**
+   - **LAN 模式**：`npx expo start --lan`（推薦，需同一 Wi-Fi）
+   - **Tunnel 模式**：`npx expo start --tunnel`（跨網路可用，但可能較慢）
+
+#### Android 手機連接步驟
+
+步驟與 iOS 相同，但需在 Google Play Store 安裝 Expo Go App。
+
+#### 故障排除
+
+- **連接超時**：確認手機和電腦在同一 Wi-Fi 網路
+- **無法掃描 QR Code**：嘗試手動輸入終端顯示的 `exp://` 地址
+- **防火牆阻擋**：Windows 防火牆可能需要允許 Node.js 通過
+- **Tunnel 模式端點離線**：嘗試使用 LAN 模式，或重新啟動開發伺服器
+
+#### 開發快捷鍵
+
+連接成功後，可在終端使用以下快捷鍵：
+- `r` - 重新載入應用程式
+- `m` - 切換開發選單
+- `j` - 開啟除錯工具
+- `w` - 開啟 Web 版本
+- `?` - 顯示所有命令
 
 ### 🌐 Web 版本說明
 
