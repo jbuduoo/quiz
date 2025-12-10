@@ -1,0 +1,273 @@
+{
+  "metadata": {
+    "version": "2.0.0",
+    "lastUpdated": "2025-12-10T07:38:46.180Z",
+    "totalQuestions": 278
+  },
+  "testNames": [
+    {
+      "id": "test-信託營業員",
+      "name": "信託營業員",
+      "totalQuestions": 263,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "test-初階外匯",
+      "name": "初階外匯",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "test-初階授信",
+      "name": "初階授信",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "test-衍生性金融商品",
+      "name": "衍生性金融商品",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "test-銀行內控(一般)",
+      "name": "銀行內控(一般)",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "test-風險管理基本能力",
+      "name": "風險管理基本能力",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    }
+  ],
+  "subjects": [
+    {
+      "id": "subject-信託營業員-信託實務",
+      "name": "信託實務",
+      "testName": "信託營業員",
+      "totalQuestions": 163,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-信託營業員-信託法規",
+      "name": "信託法規",
+      "testName": "信託營業員",
+      "totalQuestions": 100,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-初階外匯-信託實務",
+      "name": "信託實務",
+      "testName": "初階外匯",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-初階授信-信託實務",
+      "name": "信託實務",
+      "testName": "初階授信",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-衍生性金融商品-信託實務",
+      "name": "信託實務",
+      "testName": "衍生性金融商品",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-銀行內控(一般)-信託實務",
+      "name": "信託實務",
+      "testName": "銀行內控(一般)",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "subject-風險管理基本能力-信託實務",
+      "name": "信託實務",
+      "testName": "風險管理基本能力",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    }
+  ],
+  "series": [
+    {
+      "id": "series-信託營業員-信託實務-59期",
+      "name": "59期",
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-信託營業員-信託實務-60期",
+      "name": "60期",
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "totalQuestions": 80,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-信託營業員-信託實務-61期",
+      "name": "61期",
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "totalQuestions": 80,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-信託營業員-信託法規-60期",
+      "name": "60期",
+      "testName": "信託營業員",
+      "subject": "信託法規",
+      "totalQuestions": 50,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-信託營業員-信託法規-61期",
+      "name": "61期",
+      "testName": "信託營業員",
+      "subject": "信託法規",
+      "totalQuestions": 50,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-初階外匯-信託實務-59期",
+      "name": "59期",
+      "testName": "初階外匯",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-初階授信-信託實務-59期",
+      "name": "59期",
+      "testName": "初階授信",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-衍生性金融商品-信託實務-1期",
+      "name": "1期",
+      "testName": "衍生性金融商品",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-銀行內控(一般)-信託實務-59期",
+      "name": "59期",
+      "testName": "銀行內控(一般)",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    },
+    {
+      "id": "series-風險管理基本能力-信託實務-59期",
+      "name": "59期",
+      "testName": "風險管理基本能力",
+      "subject": "信託實務",
+      "totalQuestions": 3,
+      "completedQuestions": 0,
+      "completionPercentage": 0
+    }
+  ],
+  "questionFiles": [
+    {
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "series_no": "59期",
+      "file": "questions/q_e3b6ec3e.json",
+      "count": 3
+    },
+    {
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "series_no": "60期",
+      "file": "questions/q_b3c96f79.json",
+      "count": 80
+    },
+    {
+      "testName": "信託營業員",
+      "subject": "信託實務",
+      "series_no": "61期",
+      "file": "questions/q_0f7eee9d.json",
+      "count": 80
+    },
+    {
+      "testName": "信託營業員",
+      "subject": "信託法規",
+      "series_no": "60期",
+      "file": "questions/q_4660f77e.json",
+      "count": 50
+    },
+    {
+      "testName": "信託營業員",
+      "subject": "信託法規",
+      "series_no": "61期",
+      "file": "questions/q_4ea9a96d.json",
+      "count": 50
+    },
+    {
+      "testName": "初階外匯",
+      "subject": "信託實務",
+      "series_no": "59期",
+      "file": "questions/q_f7a81613.json",
+      "count": 3
+    },
+    {
+      "testName": "初階授信",
+      "subject": "信託實務",
+      "series_no": "59期",
+      "file": "questions/q_a403a076.json",
+      "count": 3
+    },
+    {
+      "testName": "衍生性金融商品",
+      "subject": "信託實務",
+      "series_no": "1期",
+      "file": "questions/q_809c044b.json",
+      "count": 3
+    },
+    {
+      "testName": "銀行內控(一般)",
+      "subject": "信託實務",
+      "series_no": "59期",
+      "file": "questions/q_f256c22a.json",
+      "count": 3
+    },
+    {
+      "testName": "風險管理基本能力",
+      "subject": "信託實務",
+      "series_no": "59期",
+      "file": "questions/q_c04e8330.json",
+      "count": 3
+    }
+  ]
+}

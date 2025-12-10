@@ -7,6 +7,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/data/*.json"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -24,7 +28,15 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "證照考試題庫學習 App",
+      "shortName": "題庫學習",
+      "lang": "zh-TW",
+      "scope": "/",
+      "themeColor": "#007AFF",
+      "backgroundColor": "#ffffff"
     }
   }
 }

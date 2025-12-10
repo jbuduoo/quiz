@@ -6,16 +6,30 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "convert:excel": "node scripts/convertExcelToJSON.js",
+    "convert:csv": "node scripts/convertExcelToCSV.js"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/bottom-tabs": "^7.8.12",
+    "@react-navigation/native": "^7.1.25",
+    "@react-navigation/native-stack": "^7.8.6",
     "expo": "~54.0.27",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-dom": "^19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "^4.18.0",
+    "react-native-web": "^0.21.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/node": "^24.10.2",
     "@types/react": "~19.1.0",
+    "@types/xlsx": "^0.0.35",
+    "ts-node": "^10.9.2",
     "typescript": "~5.9.2"
   },
   "private": true
