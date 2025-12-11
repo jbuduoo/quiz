@@ -12,6 +12,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TestName } from '../types';
 import QuestionService from '../services/QuestionService';
+import SettingsService from '../services/SettingsService';
+import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../../App';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -20,6 +22,7 @@ const TestNameListScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [testNames, setTestNames] = useState<TestName[]>([]);
   const [loading, setLoading] = useState(true);
+  const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
   useEffect(() => {
     loadData();
@@ -42,8 +45,16 @@ const TestNameListScreen = () => {
 
   const renderTestNameItem = ({ item }: { item: TestName }) => (
     <TouchableOpacity
-      style={styles.testNameItem}
-      onPress={() => {
+      style={[
+        styles.testNameItem,
+        {
+          backgroundColor: colors.surface,
+          shadowColor: colors.text,
+        },
+      ]}
+      onPress={async () => {
+        // 儲存選擇的證照
+        await SettingsService.setSelectedTestName(item.name);
         navigation.navigate('SubjectList', {
           testName: item.name,
         });
@@ -51,21 +62,63 @@ const TestNameListScreen = () => {
     >
       <View style={styles.testNameContent}>
         <View style={styles.testNameContainer}>
-          <Text style={styles.testNameText}>{item.name}</Text>
-          <View style={styles.questionCountBadge}>
-            <Text style={styles.questionCountText}>({item.totalQuestions})</Text>
+          <Text
+            style={[
+              styles.testNameText,
+              {
+                color: colors.text,
+                fontSize: textSizeValue + 2,
+              },
+            ]}
+          >
+            {item.name}
+          </Text>
+          <View
+            style={[
+              styles.questionCountBadge,
+              { backgroundColor: '#FFEB3B' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.questionCountText,
+                {
+                  fontSize: textSizeValue,
+                },
+              ]}
+            >
+              ({item.totalQuestions})
+            </Text>
           </View>
         </View>
         <View style={styles.progressContainer}>
-          <Text style={styles.progressText}>{item.completionPercentage}%</Text>
+          <Text
+            style={[
+              styles.progressText,
+              {
+                color: colors.textSecondary,
+                fontSize: textSizeValue,
+              },
+            ]}
+          >
+            {item.completionPercentage}%
+          </Text>
         </View>
       </View>
       {item.totalQuestions > 0 && (
-        <View style={styles.progressBarContainer}>
+        <View
+          style={[
+            styles.progressBarContainer,
+            { backgroundColor: colors.border },
+          ]}
+        >
           <View
             style={[
               styles.progressBar,
-              { width: `${item.completionPercentage}%` },
+              {
+                width: `${item.completionPercentage}%`,
+                backgroundColor: colors.primary,
+              },
             ]}
           />
         </View>
@@ -75,23 +128,88 @@ const TestNameListScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+      ]}
+    >
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.headerBackground },
+        ]}
+      >
         <View style={styles.headerLeft}>
-          <Text style={styles.headerIcon}>⚙️</Text>
-          <Text style={styles.headerIcon}>⭐</Text>
+          <Text
+            style={[
+              styles.headerIcon,
+              {
+                color: colors.headerText,
+                fontSize: titleTextSizeValue,
+              },
+            ]}
+          >
+            ⚙️
+          </Text>
+          <Text
+            style={[
+              styles.headerIcon,
+              {
+                color: colors.headerText,
+                fontSize: titleTextSizeValue,
+              },
+            ]}
+          >
+            ⭐
+          </Text>
         </View>
-        <Text style={styles.headerTitle}>單一級檢定題庫</Text>
+        <Text
+          style={[
+            styles.headerTitle,
+            {
+              color: colors.headerText,
+              fontSize: titleTextSizeValue,
+            },
+          ]}
+        >
+          單一級檢定題庫
+        </Text>
         <View style={styles.headerRight}>
-          <Text style={styles.headerIcon}>🔍</Text>
-          <Text style={styles.headerIcon}>📚</Text>
+          <Text
+            style={[
+              styles.headerIcon,
+              {
+                color: colors.headerText,
+                fontSize: titleTextSizeValue,
+              },
+            ]}
+          >
+            🔍
+          </Text>
+          <Text
+            style={[
+              styles.headerIcon,
+              {
+                color: colors.headerText,
+                fontSize: titleTextSizeValue,
+              },
+            ]}
+          >
+            📚
+          </Text>
         </View>
       </View>
 
@@ -108,7 +226,6 @@ const TestNameListScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
   },
   loadingContainer: {
     flex: 1,
@@ -116,7 +233,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    backgroundColor: '#4A90E2',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -129,8 +245,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
     fontWeight: '600',
   },
   headerRight: {
@@ -138,18 +252,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerIcon: {
-    color: '#FFFFFF',
     fontSize: 18,
   },
   listContent: {
     padding: 16,
   },
   testNameItem: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     marginBottom: 12,
     padding: 16,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -168,9 +279,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   testNameText: {
-    fontSize: 18,
     fontWeight: '600',
-    color: '#000000',
   },
   questionCountBadge: {
     backgroundColor: '#FFEB3B',
@@ -180,7 +289,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   questionCountText: {
-    fontSize: 14,
     color: '#000000',
     fontWeight: '600',
   },
@@ -189,21 +297,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   progressText: {
-    fontSize: 14,
-    color: '#666666',
+    fontWeight: '500',
   },
   progressBarContainer: {
     height: 4,
-    backgroundColor: '#E5E5E5',
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#4A90E2',
     borderRadius: 2,
   },
 });
 
 export default TestNameListScreen;
+
 

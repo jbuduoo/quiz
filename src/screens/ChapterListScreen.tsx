@@ -125,7 +125,7 @@ const ChapterListScreen = () => {
         } as any)}
       >
         <Text style={styles.wrongBookText}>
-          ❤️ 錯題與收藏本 {wrongBookCount > 0 && `(${wrongBookCount})`}
+          複習錯題 {wrongBookCount > 0 && `(${wrongBookCount}題)`}
         </Text>
       </TouchableOpacity>
     );
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   wrongBookText: {
     fontSize: 16,
     color: '#000000',
-    textAlign: 'center',
+    textAlign: 'left',
   },
 });
 

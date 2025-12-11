@@ -239,9 +239,8 @@ class QuestionService {
         questionId,
       };
 
-      // 如果答錯，自動加入錯題本
+      // 如果答錯，更新錯誤次數
       if (answer.isCorrect === false && existingAnswer.isAnswered) {
-        updatedAnswer.isInWrongBook = true;
         updatedAnswer.wrongCount = existingAnswer.wrongCount + 1;
         updatedAnswer.lastWrongAt = new Date();
       }
@@ -250,6 +249,11 @@ class QuestionService {
       if (answer.isCorrect === true) {
         updatedAnswer.lastAnsweredAt = new Date();
       }
+
+      // 根據收藏狀態同步錯題本狀態（不管答對還是答錯）
+      // 已收藏 → 加入錯題本
+      // 未收藏 → 從錯題本移除
+      updatedAnswer.isInWrongBook = updatedAnswer.isFavorite;
 
       userAnswers[questionId] = updatedAnswer;
       await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
@@ -261,7 +265,7 @@ class QuestionService {
     }
   }
 
-  // 切換收藏狀態
+  // 切換收藏狀態（同步更新錯題本）
   async toggleFavorite(questionId: string): Promise<boolean> {
     try {
       const userAnswers = await this.getUserAnswers();
@@ -277,9 +281,12 @@ class QuestionService {
       };
 
       const newFavoriteStatus = !existingAnswer.isFavorite;
+      
+      // 同步更新錯題本狀態：收藏 = 加入錯題本，取消收藏 = 移除錯題本
       await this.updateUserAnswer(questionId, {
         ...existingAnswer,
         isFavorite: newFavoriteStatus,
+        isInWrongBook: newFavoriteStatus, // 收藏與錯題本同步
       });
 
       return newFavoriteStatus;
@@ -317,11 +324,12 @@ class QuestionService {
     }
   }
 
-  // 從錯題本移除（同時清除所有相關記錄）
+  // 從錯題本移除（同時清除收藏狀態）
   async removeFromWrongBook(questionId: string): Promise<void> {
     try {
       await this.updateUserAnswer(questionId, {
         isInWrongBook: false,
+        isFavorite: false,  // 取消收藏
         isUncertain: false,  // 清除不確定記錄
         // 注意：查詢問題和問題回報目前沒有專門的記錄欄位
         // 如果未來添加了相關欄位，也需要在這裡清除
@@ -390,7 +398,7 @@ class QuestionService {
     }
   }
 
-  // 取得錯題本題目
+  // 取得錯題本題目（只顯示收藏的題目）
   async getWrongBookQuestions(filter?: {
     subject?: string;
     onlyWrong?: boolean;
@@ -405,11 +413,14 @@ class QuestionService {
         if (!answer) return false;
 
         if (filter?.subject && q.subject !== filter.subject) return false;
-        if (filter?.onlyWrong && !answer.isInWrongBook) return false;
-        if (filter?.onlyFavorite && !answer.isFavorite) return false;
+        
+        // 錯題本只顯示收藏的題目
+        if (!answer.isFavorite) return false;
+        
+        // 如果指定 onlyWrong，則只顯示答錯的收藏題
+        if (filter?.onlyWrong && answer.isCorrect) return false;
 
-        // 包含錯題、收藏和不確定的題目
-        return answer.isInWrongBook || answer.isFavorite || answer.isUncertain;
+        return true;
       });
 
       // 確保題目列表去重（基於 questionId）
@@ -427,7 +438,7 @@ class QuestionService {
     }
   }
 
-  // 取得錯題本統計
+  // 取得錯題本統計（只統計收藏的題目）
   async getWrongBookStats(): Promise<{
     total: number;
     wrongCount: number;
@@ -442,20 +453,17 @@ class QuestionService {
 
       allQuestions.forEach(q => {
         const answer = userAnswers[q.id];
-        if (answer) {
-          if (answer.isInWrongBook) wrongCount++;
-          if (answer.isFavorite) favoriteCount++;
+        if (answer && answer.isFavorite) {
+          favoriteCount++;
+          // 統計收藏中答錯的題數
+          if (answer.isAnswered && !answer.isCorrect) {
+            wrongCount++;
+          }
         }
       });
 
-      const total = new Set(
-        allQuestions
-          .filter(q => {
-            const answer = userAnswers[q.id];
-            return answer && (answer.isInWrongBook || answer.isFavorite);
-          })
-          .map(q => q.id)
-      ).size;
+      // 總數就是收藏的題數
+      const total = favoriteCount;
 
       return { total, wrongCount, favoriteCount };
     } catch (error) {
@@ -813,6 +821,50 @@ class QuestionService {
       await AsyncStorage.setItem(QUIZ_PROGRESS_KEY, JSON.stringify(progressData));
     } catch (error) {
       console.error('清除測驗進度失敗:', error);
+    }
+  }
+
+  // 清空指定期數的所有答題記錄（用於重新測驗）
+  async clearSeriesAnswers(
+    testName: string,
+    subject: string,
+    series_no: string
+  ): Promise<void> {
+    try {
+      const questions = await this.getQuestionsByTestNameSubjectSeries(
+        testName,
+        subject,
+        series_no
+      );
+      const userAnswers = await this.getUserAnswers();
+      
+      // 清空該期數所有題目的答題記錄（保留收藏狀態）
+      questions.forEach(question => {
+        if (userAnswers[question.id]) {
+          const existingAnswer = userAnswers[question.id];
+          // 保留收藏狀態，但清空所有答題相關的記錄
+          userAnswers[question.id] = {
+            questionId: question.id,
+            isCorrect: false,
+            isAnswered: false,
+            selectedAnswer: undefined,
+            isFavorite: existingAnswer.isFavorite || false, // 保留收藏狀態
+            isInWrongBook: false, // 清空錯題本標記
+            isUncertain: false, // 清空不確定標記
+            wrongCount: 0, // 重置錯誤次數
+          };
+        }
+      });
+      
+      await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
+      
+      // 清除該期數的測驗進度
+      await this.clearQuizProgress(testName, subject, series_no);
+      
+      // 更新進度統計
+      await this.updateProgress();
+    } catch (error) {
+      console.error('清空期數答題記錄失敗:', error);
     }
   }
 }

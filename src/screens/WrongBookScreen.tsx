@@ -102,34 +102,58 @@ const WrongBookScreen = () => {
     const isWrong = answerInfo?.isInWrongBook || false;
     const isFavorite = answerInfo?.isFavorite || false;
     const wrongCount = answerInfo?.wrongCount || 0;
+    const isAnswered = answerInfo?.isAnswered || false;
+    const isCorrect = answerInfo?.isCorrect || false;
+    
+    // 判斷按鈕文字
+    const getButtonText = () => {
+      if (!isAnswered) {
+        return '開始測驗';
+      } else if (isAnswered && !isCorrect) {
+        return '繼續測驗';
+      } else {
+        return '重新測驗';
+      }
+    };
+    
+    const handleButtonPress = () => {
+      // 去重題目 ID，確保每個題目只出現一次
+      const uniqueQuestionIds = Array.from(new Set(questions.map(q => q.id)));
+      navigation.navigate('ReviewQuiz', {
+        questionId: item.id,
+        questionIds: uniqueQuestionIds,
+      });
+    };
 
     return (
-      <TouchableOpacity
-        style={styles.questionItem}
-        onPress={() => {
-          // 去重題目 ID，確保每個題目只出現一次
-          const uniqueQuestionIds = Array.from(new Set(questions.map(q => q.id)));
-          navigation.navigate('ReviewQuiz', {
-            questionId: item.id,
-            questionIds: uniqueQuestionIds,
-          });
-        }}
-      >
-        <View style={styles.questionContent}>
-          <Text style={styles.questionPreview}>{questionPreview}</Text>
-          <View style={styles.questionMeta}>
-            {isWrong && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>錯誤 {wrongCount} 次</Text>
-              </View>
-            )}
-            {isFavorite && (
-              <Text style={styles.favoriteIcon}>❤️</Text>
-            )}
-            <Text style={styles.subjectTag}>{item.subject}</Text>
+      <View style={styles.questionItem}>
+        <TouchableOpacity
+          style={styles.questionContentContainer}
+          onPress={handleButtonPress}
+        >
+          <View style={styles.questionContent}>
+            <Text style={styles.questionPreview}>{questionPreview}</Text>
+            <View style={styles.questionMeta}>
+              {isWrong && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>錯誤 {wrongCount} 次</Text>
+                </View>
+              )}
+              {/* 錯題本只顯示收藏的題目，所以所有題目都顯示收藏圖標 */}
+              {isFavorite && (
+                <Text style={styles.favoriteIcon}>❤️</Text>
+              )}
+              <Text style={styles.subjectTag}>{item.subject}</Text>
+            </View>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleButtonPress}
+        >
+          <Text style={styles.actionButtonText}>{getButtonText()}</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -316,9 +340,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E5E5',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  questionContentContainer: {
+    flex: 1,
   },
   questionContent: {
     padding: 16,
+  },
+  actionButton: {
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  actionButtonText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '500',
   },
   questionPreview: {
     fontSize: 14,

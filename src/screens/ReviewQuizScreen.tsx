@@ -30,7 +30,7 @@ const ReviewQuizScreen = () => {
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [userAnswer, setUserAnswer] = useState<UserAnswer | null>(null);
-  const [isInWrongBook, setIsInWrongBook] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ const ReviewQuizScreen = () => {
     const answers = await QuestionService.getUserAnswers();
     const answer = answers[currentQuestion.id];
     setUserAnswer(answer || null);
-    setIsInWrongBook(answer?.isInWrongBook || false);
+    setIsFavorite(answer?.isFavorite || false);
     
     // 如果題目已經答過，恢復之前的狀態
     if (answer?.isAnswered) {
@@ -110,12 +110,7 @@ const ReviewQuizScreen = () => {
       selectedAnswer: option,
     });
 
-    // 如果答錯，更新錯誤次數
-    if (!correct) {
-      await QuestionService.updateUserAnswer(currentQuestion.id, {
-        isInWrongBook: true,
-      });
-    }
+    // 答題後，收藏狀態會自動同步錯題本狀態（在 updateUserAnswer 中處理）
 
     // 重新載入用戶答案
     await loadUserAnswer();
@@ -178,7 +173,7 @@ const ReviewQuizScreen = () => {
       
       // 重新載入用戶答案以更新狀態
       await loadUserAnswer();
-      setIsInWrongBook(false);
+      setIsFavorite(false);
       
       // 直接執行後續操作，不顯示成功訊息
       // 如果還有其他題目，繼續下一題；否則返回錯題本頁
@@ -204,10 +199,94 @@ const ReviewQuizScreen = () => {
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
       // 不重置狀態，讓 loadUserAnswer 來恢復狀態
+    } else {
+      // 已經是最後一題，詢問是否結束複習
+      if (typeof window !== 'undefined') {
+        // Web 平台
+        const confirmed = window.confirm('是否結束複習？');
+        if (confirmed) {
+          await handleEndReviewConfirm();
+        }
+      } else {
+        // 原生平台
+        Alert.alert('確認', '是否結束複習？', [
+          { text: '否', style: 'cancel' },
+          {
+            text: '是',
+            onPress: async () => {
+              await handleEndReviewConfirm();
+            },
+          },
+        ]);
+      }
+    }
+  };
+
+  // 切換收藏狀態（同步錯題本）
+  const handleToggleFavorite = async () => {
+    const currentQuestion = questions[currentIndex];
+    if (!currentQuestion) return;
+
+    const newFavoriteStatus = await QuestionService.toggleFavorite(currentQuestion.id);
+    setIsFavorite(newFavoriteStatus);
+    
+    // 重新載入用戶答案以更新狀態
+    await loadUserAnswer();
+  };
+
+  const handleEndReviewConfirm = async () => {
+    // 計算已完成和未完成的題數
+    const userAnswers = await QuestionService.getUserAnswers();
+    let completedCount = 0;
+    
+    questions.forEach(q => {
+      const answer = userAnswers[q.id];
+      if (answer?.isAnswered) {
+        completedCount++;
+      }
+    });
+    
+    // 重新計算分數
+    const updatedAnswers = await QuestionService.getUserAnswers();
+    let correctCount = 0;
+    let wrongCount = 0;
+    
+    questions.forEach(q => {
+      const answer = updatedAnswers[q.id];
+      if (answer?.isAnswered) {
+        if (answer.isCorrect) {
+          correctCount++;
+        } else {
+          wrongCount++;
+        }
+      }
+    });
+    
+    const score = Math.round((correctCount / questions.length) * 100);
+    
+    // 顯示成績對話框
+    const scoreMessage = `成績\n\n錯題：${wrongCount}題/總題數：${questions.length}題\n\n分數：${score}分`;
+    
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      window.alert(scoreMessage);
+      await QuestionService.updateProgress();
+      navigation.goBack();
+    } else {
+      // 原生平台
+      Alert.alert('成績', scoreMessage, [
+        {
+          text: '確定',
+          onPress: async () => {
+            await QuestionService.updateProgress();
+            navigation.goBack();
+          },
+        },
+      ]);
     }
   };
 
@@ -216,7 +295,9 @@ const ReviewQuizScreen = () => {
       { text: '取消', style: 'cancel' },
       {
         text: '確定',
-        onPress: () => navigation.goBack(),
+        onPress: async () => {
+          await handleEndReviewConfirm();
+        },
       },
     ]);
   };
@@ -260,7 +341,7 @@ const ReviewQuizScreen = () => {
 
   const currentQuestion = questions[currentIndex];
   const progress = `${currentIndex + 1}/${questions.length}`;
-  const statusLabel = isInWrongBook ? '錯題' : '';
+  const statusLabel = isFavorite ? '我的最愛' : '';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -273,11 +354,8 @@ const ReviewQuizScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            錯題與收藏本
+            複習錯題
           </Text>
-          {statusLabel && (
-            <Text style={styles.statusLabel}>{statusLabel}</Text>
-          )}
         </View>
         <Text style={styles.progressText}>{progress}</Text>
       </View>
@@ -324,17 +402,6 @@ const ReviewQuizScreen = () => {
                 <Text style={styles.bottomActionButtonText}>查詢問題</Text>
               </TouchableOpacity>
               
-              {isInWrongBook && (
-                <TouchableOpacity
-                  style={[styles.bottomActionButton, styles.removeActionButton]}
-                  onPress={handleRemoveFromWrongBook}
-                >
-                  <Text style={[styles.bottomActionButtonText, styles.removeActionButtonText]}>
-                    從錯題本移除
-                  </Text>
-                </TouchableOpacity>
-              )}
-              
               <TouchableOpacity
                 style={styles.bottomActionButton}
                 onPress={handleReportProblem}
@@ -367,18 +434,16 @@ const ReviewQuizScreen = () => {
           <Text style={styles.footerButtonText}>上一題</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.footerButton, styles.footerButtonGray]}
-          onPress={handleEndReview}
+          style={[styles.footerButton, styles.footerButtonYellow]}
+          onPress={handleToggleFavorite}
         >
-          <Text style={styles.footerButtonText}>結束複習</Text>
+          <Text style={styles.footerButtonText}>
+            {isFavorite ? '❤️ 我的最愛' : '🤍 我的最愛'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[
-            styles.footerButton,
-            currentIndex === questions.length - 1 && styles.footerButtonDisabled,
-          ]}
+          style={styles.footerButton}
           onPress={handleNext}
-          disabled={currentIndex === questions.length - 1}
         >
           <Text style={styles.footerButtonText}>下一題</Text>
         </TouchableOpacity>
@@ -581,12 +646,22 @@ const styles = StyleSheet.create({
   footerButtonGray: {
     backgroundColor: '#999999',
   },
+  footerButtonYellow: {
+    backgroundColor: '#FFC107',
+  },
+  footerButtonRed: {
+    backgroundColor: '#F44336',
+  },
   footerButtonDisabled: {
     backgroundColor: '#CCCCCC',
   },
   footerButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  footerButtonIconText: {
+    fontSize: 22,
     fontWeight: '600',
   },
 });
