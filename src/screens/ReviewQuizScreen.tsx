@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -350,7 +351,11 @@ const ReviewQuizScreen = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backButtonText}>←</Text>
+          <Image
+            source={require('../../assets/back.png')}
+            style={styles.backButtonImage}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -477,19 +482,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
+  backButtonImage: {
+    width: 24,
+    height: 24,
   },
   headerTitleContainer: {
     flex: 1,
     marginHorizontal: 16,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   headerTitle: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
   },
   statusLabel: {
