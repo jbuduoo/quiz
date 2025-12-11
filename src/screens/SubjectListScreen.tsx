@@ -147,23 +147,17 @@ const SubjectListScreen = () => {
           >
             {item.name}
           </Text>
-          <View
+          <Text
             style={[
-              styles.questionCountBadge,
-              { backgroundColor: '#FFEB3B' },
+              styles.questionCountText,
+              {
+                color: colors.text,
+                fontSize: textSizeValue - 2,
+              },
             ]}
           >
-            <Text
-              style={[
-                styles.questionCountText,
-                {
-                  fontSize: textSizeValue - 2,
-                },
-              ]}
-            >
-              ({item.totalQuestions})
-            </Text>
-          </View>
+            (總題數{item.totalQuestions})
+          </Text>
         </View>
         <View style={styles.progressContainer}>
           <Text
@@ -389,16 +383,9 @@ const styles = StyleSheet.create({
   subjectText: {
     fontWeight: '500',
   },
-  questionCountBadge: {
-    backgroundColor: '#FFEB3B',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 8,
-  },
   questionCountText: {
-    color: '#000000',
-    fontWeight: '600',
+    fontWeight: '500',
+    marginLeft: 8,
   },
   progressContainer: {
     flexDirection: 'row',
