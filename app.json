@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "quiz",
+    "name": "金融證照考試題庫",
     "slug": "quiz",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -18,9 +18,18 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jbuduoo.quiz",
+      "buildNumber": "1",
+      "infoPlist": {
+        "CFBundleDisplayName": "金融證照題庫",
+        "CFBundleName": "題庫學習",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.jbuduoo.quiz",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -38,6 +47,11 @@
       "scope": "/",
       "themeColor": "#007AFF",
       "backgroundColor": "#ffffff"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d3050d1c-a282-42f3-88fa-3e3b35bd1a6e"
+      }
     }
   }
 }
