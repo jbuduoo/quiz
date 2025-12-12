@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -49,7 +50,7 @@ const TestNameListScreen = () => {
         styles.testNameItem,
         {
           backgroundColor: colors.surface,
-          shadowColor: colors.text,
+          ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
         },
       ]}
       onPress={async () => {
@@ -261,10 +262,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
     padding: 16,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
+    } : {
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    }),
   },
   testNameContent: {
     flexDirection: 'row',

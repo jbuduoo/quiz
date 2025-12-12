@@ -8,6 +8,7 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { TextSize, Theme } from '../services/SettingsService';
@@ -106,8 +107,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}
+      accessibilityViewIsModal={true}
+      {...(Platform.OS === 'web' ? {
+        // Web 平台：使用 pointer-events 來防止背景交互，而不是 aria-hidden
+        // 這樣可以避免無障礙警告
+      } : {})}
     >
-      <View style={styles.modalOverlay}>
+      <View 
+        style={styles.modalOverlay}
+        {...(Platform.OS === 'web' ? {
+          // 在 Web 上，確保背景層不會阻止焦點
+          accessibilityRole: 'none',
+        } : {})}
+      >
         <View
           style={[
             styles.modalContent,
@@ -393,11 +405,15 @@ const styles = StyleSheet.create({
     maxWidth: 500,
     maxHeight: '80%',
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.25)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+      elevation: 5,
+    }),
   },
   modalHeader: {
     flexDirection: 'row',

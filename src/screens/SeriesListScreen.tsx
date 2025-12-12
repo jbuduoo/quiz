@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -114,7 +115,7 @@ const SeriesListScreen = () => {
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            shadowColor: colors.text,
+            ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
           },
           isHovered && {
             backgroundColor: '#FFF9C4',
@@ -253,7 +254,7 @@ const SeriesListScreen = () => {
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
-            shadowColor: colors.text,
+            ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
           },
           isWrongBookHovered && {
             backgroundColor: '#FFF9C4',
@@ -412,10 +413,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
+    } : {
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    }),
   },
   seriesContent: {
     flexDirection: 'row',
@@ -470,10 +475,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
+    } : {
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    }),
   },
   wrongBookContent: {
     flex: 1,
