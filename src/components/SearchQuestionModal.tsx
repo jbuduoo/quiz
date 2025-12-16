@@ -52,13 +52,15 @@ const SearchQuestionModal: React.FC<SearchQuestionModalProps> = ({
         setLoading(true);
         setError(null);
         
-        // 設定 8 秒超時
+        // 設定 15 秒超時（增加超時時間，因為 Google 搜尋可能需要較長時間）
         timeoutRef.current = setTimeout(() => {
-          if (loading) {
-            setError('載入超時，請點擊「在瀏覽器中開啟」或「重新載入」');
-            setLoading(false);
+          setError('載入超時，請點擊「在瀏覽器中開啟」或「重新載入」');
+          setLoading(false);
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
           }
-        }, 8000);
+        }, 15000);
       }
     } else {
       // Modal 關閉時清除超時
@@ -73,9 +75,10 @@ const SearchQuestionModal: React.FC<SearchQuestionModalProps> = ({
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
-  }, [visible, loading, googleSearchUrl, onClose]);
+  }, [visible, googleSearchUrl, onClose]);
 
   return (
     <Modal
@@ -120,10 +123,24 @@ const SearchQuestionModal: React.FC<SearchQuestionModalProps> = ({
                 setError(null);
               }}
               onLoadEnd={() => {
+                console.log('✅ [SearchQuestionModal] WebView 載入完成');
                 setLoading(false);
                 if (timeoutRef.current) {
                   clearTimeout(timeoutRef.current);
                   timeoutRef.current = null;
+                }
+              }}
+              onLoadProgress={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                // 如果載入進度超過 50%，清除超時（表示正在載入）
+                if (nativeEvent.progress > 0.5 && timeoutRef.current) {
+                  // 延長超時時間
+                  clearTimeout(timeoutRef.current);
+                  timeoutRef.current = setTimeout(() => {
+                    setError('載入超時，請點擊「在瀏覽器中開啟」或「重新載入」');
+                    setLoading(false);
+                    timeoutRef.current = null;
+                  }, 10000);
                 }
               }}
               onError={(syntheticEvent) => {

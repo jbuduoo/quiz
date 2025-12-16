@@ -170,28 +170,90 @@ const QuizScreen = () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
     
-    // 將題目加入錯題本
-    await QuestionService.updateUserAnswer(currentQuestion.id, {
-      isInWrongBook: true,
-    });
-    await loadUserAnswer();
-    
-    // 生成完整的實例編號
-    const instanceId = getQuestionInstanceId(currentQuestion, currentIndex);
-    
-    // 開啟 Google 表單，並將題目編號作為 URL 參數傳遞（自動填入表單）
-    const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
-    
-    // 直接開啟 Google 表單（不顯示確認對話框）
-    if (typeof window !== 'undefined') {
-      // Web 平台
-      window.open(googleFormUrl, '_blank');
-    } else {
-      // 原生平台
-      Linking.openURL(googleFormUrl).catch(err => {
-        console.error('無法開啟 Google 表單:', err);
-        Alert.alert('錯誤', '無法開啟 Google 表單，請手動複製題目編號：\n\n' + instanceId);
+    try {
+      // 將題目加入錯題本
+      await QuestionService.updateUserAnswer(currentQuestion.id, {
+        isInWrongBook: true,
       });
+      await loadUserAnswer();
+      
+      // 生成完整的實例編號
+      const instanceId = getQuestionInstanceId(currentQuestion, currentIndex);
+      
+      // 開啟 Google 表單，並將題目編號作為 URL 參數傳遞（自動填入表單）
+      const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
+      
+      console.log('📝 [handleReportProblem] 準備開啟 Google 表單:', googleFormUrl);
+      
+      // 直接開啟 Google 表單
+      if (Platform.OS === 'web') {
+        // Web 平台
+        if (typeof window !== 'undefined') {
+          window.open(googleFormUrl, '_blank');
+          console.log('✅ [handleReportProblem] Web 平台：已開啟新視窗');
+        }
+      } else {
+        // 原生平台（iOS/Android）
+        const canOpen = await Linking.canOpenURL(googleFormUrl);
+        if (canOpen) {
+          Linking.openURL(googleFormUrl)
+            .then(() => {
+              console.log('✅ [handleReportProblem] 已開啟 Google 表單');
+            })
+            .catch(err => {
+              console.error('❌ [handleReportProblem] 無法開啟 Google 表單:', err);
+              Alert.alert(
+                '無法開啟表單',
+                `無法開啟 Google 表單，請手動複製題目編號：\n\n${instanceId}`,
+                [
+                  { text: '複製編號', onPress: async () => {
+                    try {
+                      // 使用 React Native 的 Clipboard API（需要從 @react-native-clipboard/clipboard 導入）
+                      // 如果沒有安裝，則顯示題目編號讓用戶手動複製
+                      const Clipboard = require('@react-native-clipboard/clipboard').default || require('@react-native-clipboard/clipboard');
+                      if (Clipboard && Clipboard.setString) {
+                        Clipboard.setString(instanceId);
+                        Alert.alert('已複製', '題目編號已複製到剪貼簿');
+                      } else {
+                        Alert.alert('請手動複製', instanceId);
+                      }
+                    } catch (clipboardError) {
+                      console.error('無法使用剪貼簿:', clipboardError);
+                      Alert.alert('請手動複製', instanceId);
+                    }
+                  }},
+                  { text: '確定', style: 'cancel' }
+                ]
+              );
+            });
+        } else {
+          console.error('❌ [handleReportProblem] 無法開啟 URL:', googleFormUrl);
+          Alert.alert(
+            '錯誤',
+            `無法開啟 Google 表單，請手動複製題目編號：\n\n${instanceId}`,
+            [
+              { text: '複製編號', onPress: async () => {
+                try {
+                  const Clipboard = require('@react-native-clipboard/clipboard').default || require('@react-native-clipboard/clipboard');
+                  if (Clipboard && Clipboard.setString) {
+                    Clipboard.setString(instanceId);
+                    Alert.alert('已複製', '題目編號已複製到剪貼簿');
+                  } else {
+                    Alert.alert('請手動複製', instanceId);
+                  }
+                } catch (clipboardError) {
+                  console.error('無法使用剪貼簿:', clipboardError);
+                  Alert.alert('請手動複製', instanceId);
+                }
+              }},
+              { text: '確定', style: 'cancel' }
+            ]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('❌ [handleReportProblem] 發生錯誤:', error);
+      Alert.alert('錯誤', '處理問題回報時發生錯誤，請稍後再試');
     }
   };
 
@@ -377,7 +439,13 @@ const QuizScreen = () => {
         <Text style={styles.progressText}>{progress}</Text>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: Platform.OS === 'web' ? 100 : Math.max(insets.bottom + 80, 80) }
+        ]}
+      >
         {/* 背景區域 - 只在第一題顯示 */}
         {displayInfo.showBackground && displayInfo.background && (
           <View style={styles.backgroundContainer}>
@@ -475,7 +543,7 @@ const QuizScreen = () => {
           );
         })}
 
-        {/* 新增功能按鈕區域 - 檢視模式下隱藏 */}
+        {/* 新增功能按鈕區域 - 在選項 (D) 下方，檢視模式下隱藏 */}
         {!isReviewModeBool && (
           <View style={styles.bottomActionButtons}>
             <TouchableOpacity
@@ -832,20 +900,35 @@ const styles = StyleSheet.create({
   },
   bottomActionButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
+    justifyContent: 'flex-start',
+    marginTop: 12,
+    marginBottom: 12,
     paddingHorizontal: 4,
-    gap: 4,
+    ...(Platform.OS === 'web' 
+      ? { gap: 8 } 
+      : { gap: 4 }
+    ),
   },
   bottomActionButton: {
-    flex: 1,
+    ...(Platform.OS === 'web' 
+      ? {
+          width: '48%',
+          flexShrink: 0,
+          flexGrow: 0,
+        }
+      : {
+          flex: 1,
+        }
+    ),
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E5E5E5',
+    minHeight: Platform.OS === 'web' ? 44 : undefined,
   },
   bottomActionButtonActive: {
     backgroundColor: '#FFEB3B',

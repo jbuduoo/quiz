@@ -7,6 +7,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:aab": "eas build --platform android --profile production",
+    "build:ios": "eas build --platform ios --profile production",
     "convert:excel": "node scripts/convertExcelToJSON.js",
     "convert:csv": "node scripts/convertExcelToCSV.js"
   },

@@ -58,7 +58,11 @@ async function loadIndexData(): Promise<IndexData | null> {
         return indexModule;
       }
     } catch (requireError) {
-      console.warn('無法使用 require 載入索引:', requireError);
+      console.error('❌ 無法使用 require 載入索引:', requireError);
+      if (requireError instanceof Error) {
+        console.error('❌ require 錯誤詳情:', requireError.message);
+        console.error('❌ require 錯誤堆疊:', requireError.stack);
+      }
     }
     
     // 在 Web 平台，使用 fetch
@@ -77,9 +81,14 @@ async function loadIndexData(): Promise<IndexData | null> {
       }
     }
     
+    console.error('❌ 所有載入索引的方法都失敗了');
     return null;
   } catch (error) {
-    console.error('載入索引資料失敗:', error);
+    console.error('❌ 載入索引資料失敗:', error);
+    if (error instanceof Error) {
+      console.error('❌ 錯誤詳情:', error.message);
+      console.error('❌ 錯誤堆疊:', error.stack);
+    }
     return null;
   }
 }
@@ -269,7 +278,7 @@ class QuestionService {
   // 初始化資料
   async initializeData(): Promise<void> {
     console.log('🚀 [initializeData] 開始初始化資料');
-    const currentVersion = '5.0.0'; // 新版本：支援資料夾結構，簡化檔案格式
+    const currentVersion = '3.0.0'; // 當前版本：支援資料夾結構，簡化檔案格式
     
     try {
       const dataVersion = await AsyncStorage.getItem(DATA_VERSION_KEY);
@@ -280,8 +289,40 @@ class QuestionService {
       this.indexData = await loadIndexData();
       
       if (!this.indexData) {
-        console.error('❌ [initializeData] 無法載入索引資料');
-        return;
+        console.error('❌ [initializeData] 無法載入索引資料，嘗試從 AsyncStorage 恢復');
+        // 嘗試從 AsyncStorage 恢復
+        try {
+          const savedTestNames = await AsyncStorage.getItem(TEST_NAMES_KEY);
+          const savedSubjects = await AsyncStorage.getItem(SUBJECTS_KEY);
+          const savedSeries = await AsyncStorage.getItem(SERIES_KEY);
+          
+          if (savedTestNames && savedSubjects && savedSeries) {
+            console.log('✅ [initializeData] 從 AsyncStorage 恢復索引資料');
+            this.indexData = {
+              metadata: {
+                version: currentVersion,
+                lastUpdated: new Date().toISOString(),
+                totalQuestions: 0,
+              },
+              testNames: JSON.parse(savedTestNames),
+              subjects: JSON.parse(savedSubjects),
+              series: JSON.parse(savedSeries),
+              questionFiles: [],
+            };
+          } else {
+            console.error('❌ [initializeData] AsyncStorage 中也沒有備份資料');
+            // 即使沒有資料，也繼續執行，讓應用程式可以顯示錯誤訊息
+          }
+        } catch (recoveryError) {
+          console.error('❌ [initializeData] 恢復索引資料失敗:', recoveryError);
+          // 繼續執行，讓應用程式可以顯示錯誤訊息
+        }
+        
+        // 如果還是沒有資料，返回（但不會拋出錯誤，讓應用程式繼續運行）
+        if (!this.indexData) {
+          console.error('❌ [initializeData] 無法載入或恢復索引資料，應用程式將使用空資料');
+          return;
+        }
       }
       
       console.log(`✅ [initializeData] 索引資料載入成功:`, {
@@ -316,12 +357,12 @@ class QuestionService {
       // 延遲更新進度統計，避免阻塞初始化
       // 使用 setTimeout 讓應用程式先完成初始化，進度更新在背景進行
       // 增加延遲時間，確保應用程式完全啟動後再更新進度
-        setTimeout(() => {
-          this.updateProgress().catch(error => {
-            console.error('❌ [initializeData] 更新進度統計失敗:', error);
-          });
-        }, 500);
-        console.log('✅ [initializeData] 初始化完成');
+      setTimeout(() => {
+        this.updateProgress().catch(error => {
+          console.error('❌ [initializeData] 更新進度統計失敗:', error);
+        });
+      }, 1000); // 增加延遲到 1 秒，確保應用程式完全啟動
+      console.log('✅ [initializeData] 初始化完成');
     } catch (error) {
       console.error('❌ [initializeData] 初始化資料失敗:', error);
       if (error instanceof Error) {
