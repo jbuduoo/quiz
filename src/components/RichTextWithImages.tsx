@@ -73,9 +73,79 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
     return fileName;
   };
 
-  // 解析文字，找出所有 @@ 標記和 ## ## 標記
-  const parseText = (inputText: string): Array<{ type: 'text' | 'image' | 'placeholder' | 'context'; content: string; imagePath?: string | null }> => {
-    const parts: Array<{ type: 'text' | 'image' | 'placeholder' | 'context'; content: string; imagePath?: string | null }> = [];
+  // 解析文字中的粗體標記 **文字** 和內聯程式碼 `文字`
+  const parseBoldAndInlineCode = (text: string): Array<{ type: 'normal' | 'bold' | 'inlineCode'; content: string }> => {
+    const parts: Array<{ type: 'normal' | 'bold' | 'inlineCode'; content: string }> = [];
+    
+    // 先找出所有粗體和內聯程式碼標記
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    const inlineCodeRegex = /`([^`]+)`/g;
+    
+    const markers: Array<{ index: number; endIndex: number; type: 'bold' | 'inlineCode'; content: string }> = [];
+    let match;
+
+    // 找出所有粗體標記
+    while ((match = boldRegex.exec(text)) !== null) {
+      markers.push({
+        index: match.index,
+        endIndex: match.index + match[0].length,
+        type: 'bold',
+        content: match[1],
+      });
+    }
+
+    // 找出所有內聯程式碼標記（排除在粗體標記內的）
+    while ((match = inlineCodeRegex.exec(text)) !== null) {
+      const isInBold = markers.some(m => 
+        m.type === 'bold' && match.index >= m.index && match.index < m.endIndex
+      );
+      if (!isInBold) {
+        markers.push({
+          index: match.index,
+          endIndex: match.index + match[0].length,
+          type: 'inlineCode',
+          content: match[1],
+        });
+      }
+    }
+
+    // 按位置排序
+    markers.sort((a, b) => a.index - b.index);
+
+    // 處理每個標記
+    let lastIndex = 0;
+    markers.forEach(marker => {
+      // 添加標記前的普通文字
+      if (marker.index > lastIndex) {
+        const normalText = text.substring(lastIndex, marker.index);
+        if (normalText) {
+          parts.push({ type: 'normal', content: normalText });
+        }
+      }
+      // 添加標記內容
+      parts.push({ type: marker.type, content: marker.content });
+      lastIndex = marker.endIndex;
+    });
+
+    // 添加剩餘的普通文字
+    if (lastIndex < text.length) {
+      const remainingText = text.substring(lastIndex);
+      if (remainingText) {
+        parts.push({ type: 'normal', content: remainingText });
+      }
+    }
+
+    // 如果沒有找到任何標記，返回整個文字作為普通文字
+    if (parts.length === 0) {
+      parts.push({ type: 'normal', content: text });
+    }
+
+    return parts;
+  };
+
+  // 解析文字，找出所有 @@ 標記、## ## 標記和 ``` ``` 標記
+  const parseText = (inputText: string): Array<{ type: 'text' | 'image' | 'placeholder' | 'context' | 'code'; content: string; imagePath?: string | null }> => {
+    const parts: Array<{ type: 'text' | 'image' | 'placeholder' | 'context' | 'code'; content: string; imagePath?: string | null }> = [];
     
     // 先找出所有 @@URL@@ 格式的圖片標記
     const urlRegex = /@@([^@]+)@@/g;
@@ -136,17 +206,32 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
       });
     }
 
-    // 過濾掉在前情提要內的圖片標記，避免重複解析
+    // 找出所有 ``` ``` 標記（程式碼區塊）
+    const codeRegex = /```\s*([\s\S]*?)\s*```/g;
+    const codeMatches: Array<{ index: number; endIndex: number; content: string }> = [];
+    let codeMatch;
+
+    while ((codeMatch = codeRegex.exec(inputText)) !== null) {
+      codeMatches.push({
+        index: codeMatch.index,
+        endIndex: codeMatch.index + codeMatch[0].length,
+        content: codeMatch[1].trim(),
+      });
+    }
+
+    // 過濾掉在程式碼區塊和前情提要內的圖片標記，避免重複解析
     const filteredUrlMatches = urlMatches.filter(um => {
-      return !contextMatches.some(cm => um.index >= cm.index && um.index < cm.endIndex);
+      return !codeMatches.some(cm => um.index >= cm.index && um.index < cm.endIndex) &&
+             !contextMatches.some(cm => um.index >= cm.index && um.index < cm.endIndex);
     });
     
     const filteredPlaceholderMatches = placeholderMatches.filter(pm => {
-      return !contextMatches.some(cm => pm.index >= cm.index && pm.index < cm.endIndex);
+      return !codeMatches.some(cm => pm.index >= cm.index && pm.index < cm.endIndex) &&
+             !contextMatches.some(cm => pm.index >= cm.index && pm.index < cm.endIndex);
     });
 
     // 合併並排序所有標記位置
-    const allMarkers: Array<{ index: number; type: 'url' | 'placeholder' | 'context'; url?: string; endIndex?: number; imagePath?: string | null; imageIndex?: number; content?: string }> = [];
+    const allMarkers: Array<{ index: number; type: 'url' | 'placeholder' | 'context' | 'code'; url?: string; endIndex?: number; imagePath?: string | null; imageIndex?: number; content?: string }> = [];
     
     filteredUrlMatches.forEach(um => {
       allMarkers.push({ 
@@ -171,6 +256,15 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
       allMarkers.push({
         index: cm.index,
         type: 'context',
+        endIndex: cm.endIndex,
+        content: cm.content,
+      });
+    });
+
+    codeMatches.forEach(cm => {
+      allMarkers.push({
+        index: cm.index,
+        type: 'code',
         endIndex: cm.endIndex,
         content: cm.content,
       });
@@ -228,6 +322,10 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
         // ## ## 標記 - 前情提要
         parts.push({ type: 'context', content: marker.content });
         currentIndex = marker.endIndex || marker.index + 2;
+      } else if (marker.type === 'code' && marker.content) {
+        // ``` ``` 標記 - 程式碼區塊
+        parts.push({ type: 'code', content: marker.content });
+        currentIndex = marker.endIndex || marker.index + 3;
       }
     });
 
@@ -267,6 +365,9 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
     <View style={[styles.container, { margin: 0, padding: 0 }]}>
       {parts.map((part, index) => {
         if (part.type === 'text') {
+          // 解析文字中的粗體標記和內聯程式碼
+          const textParts = parseBoldAndInlineCode(part.content);
+          
           // Web 平台禁用展開/收起功能，直接顯示完整文本
           if (expandable && Platform.OS !== 'web') {
             return (
@@ -278,10 +379,25 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
               />
             );
           }
-          // 直接顯示文本
+          // 顯示文本，支援粗體和內聯程式碼格式
           return (
             <Text key={index} style={textStyle}>
-              {part.content}
+              {textParts.map((textPart, textPartIndex) => {
+                if (textPart.type === 'bold') {
+                  return (
+                    <Text key={textPartIndex} style={[textStyle, { fontWeight: 'bold' }]}>
+                      {textPart.content}
+                    </Text>
+                  );
+                } else if (textPart.type === 'inlineCode') {
+                  return (
+                    <Text key={textPartIndex} style={[textStyle, styles.inlineCodeText]}>
+                      {textPart.content}
+                    </Text>
+                  );
+                }
+                return <Text key={textPartIndex}>{textPart.content}</Text>;
+              })}
             </Text>
           );
         } else if (part.type === 'image') {
@@ -357,8 +473,18 @@ const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
               style={[styles.image, imageStyle]}
             />
           );
+        } else if (part.type === 'code') {
+          // 程式碼區塊部分 - 顯示為程式碼樣式
+          return (
+            <View key={index} style={styles.codeContainer}>
+              <Text style={styles.codeText}>
+                {part.content}
+              </Text>
+            </View>
+          );
         } else if (part.type === 'context') {
           // 前情提要部分 - 顯示為可展開/收起的內容
+          // 前情提要內容會遞迴調用 RichTextWithImages，所以粗體格式會自動處理
           return (
             <ContextExpandable
               key={index}
@@ -709,6 +835,32 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E5E5',
     backgroundColor: 'transparent', // 移除內容區域背景色
+  },
+  codeContainer: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 4,
+    padding: 12,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    ...(Platform.OS === 'web' ? {
+      fontFamily: 'monospace, "Courier New", Courier, monospace',
+    } : {}),
+  },
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : Platform.OS === 'android' ? 'monospace' : 'monospace',
+    fontSize: 14,
+    color: '#333333',
+    lineHeight: 20,
+  },
+  inlineCodeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : Platform.OS === 'android' ? 'monospace' : 'monospace',
+    fontSize: 14,
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+    color: '#D63384',
   },
 });
 

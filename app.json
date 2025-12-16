@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "IPAS證照考試題庫",
+    "name": "WITS證照考試題庫",
     "slug": "quiz",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -25,7 +25,7 @@
       "bundleIdentifier": "com.jbuduoo.quiz",
       "buildNumber": "1",
       "infoPlist": {
-        "CFBundleDisplayName": "IPAS證照題庫",
+        "CFBundleDisplayName": "WITS證照題庫",
         "CFBundleName": "題庫學習",
         "ITSAppUsesNonExemptEncryption": false
       }

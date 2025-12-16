@@ -22,6 +22,7 @@ import RichTextWithImages from '../components/RichTextWithImages';
 import SearchQuestionModal from '../components/SearchQuestionModal';
 import { getQuestionDisplay } from '../utils/questionGroupParser';
 import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
+import { useTheme } from '../contexts/ThemeContext';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
@@ -32,6 +33,7 @@ const QuizScreen = () => {
   const { testName, subject, series_no, isReviewMode } = route.params;
   const isReviewModeBool = Boolean(isReviewMode);
   const insets = useSafeAreaInsets();
+  const { answerPageTextSizeValue } = useTheme();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -491,7 +493,11 @@ const QuizScreen = () => {
           <View style={styles.questionContent}>
             <RichTextWithImages
               text={displayInfo.questionText}
-              textStyle={styles.questionText}
+              textStyle={[
+                styles.questionText,
+                // 當顯示答案時，使用答案頁題目文字大小
+                showResult && { fontSize: answerPageTextSizeValue },
+              ]}
               imageStyle={styles.questionImage}
               contextText={displayInfo.questionText}
               testName={currentQuestion.testName}

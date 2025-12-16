@@ -23,11 +23,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
   const {
     textSize,
     theme,
+    answerPageTextSize,
     textSizeValue,
     titleTextSizeValue,
+    answerPageTextSizeValue,
     colors,
     updateTextSize,
     updateTheme,
+    updateAnswerPageTextSize,
   } = useTheme();
   
 
@@ -233,6 +236,83 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                 })}
               </View>
             </View>
+
+            {/* 答案頁題目文字大小設定 - Android 和 Web 平台顯示 */}
+            {(Platform.OS === 'android' || Platform.OS === 'web') && (
+              <View style={styles.section}>
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    {
+                      color: colors.text,
+                      fontSize: textSizeValue,
+                    },
+                  ]}
+                >
+                  答案頁題目文字大小
+                </Text>
+                <View style={styles.optionsContainer}>
+                  {textSizeOptions.map((option) => {
+                    const isSelected = answerPageTextSize === option.value;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.optionButton,
+                          {
+                            backgroundColor: isSelected
+                              ? colors.primary
+                              : colors.background,
+                            borderColor: isSelected
+                              ? colors.primary
+                              : colors.border,
+                          },
+                        ]}
+                        onPress={() => updateAnswerPageTextSize(option.value)}
+                      >
+                        <Text
+                          style={[
+                            styles.optionText,
+                            {
+                              color: isSelected
+                                ? '#FFFFFF'
+                                : colors.text,
+                              fontSize: textSizeValue,
+                            },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.previewContainer}>
+                  <Text
+                    style={[
+                      styles.previewText,
+                      {
+                        color: colors.textSecondary,
+                        fontSize: textSizeValue - 2,
+                      },
+                    ]}
+                  >
+                    預覽：這是答案頁題目文字大小範例
+                  </Text>
+                  <Text
+                    style={[
+                      styles.previewText,
+                      {
+                        color: colors.text,
+                        fontSize: answerPageTextSizeValue,
+                      },
+                    ]}
+                  >
+                    這是答案頁題目文字大小範例
+                  </Text>
+                </View>
+              </View>
+            )}
 
           </ScrollView>
         </View>

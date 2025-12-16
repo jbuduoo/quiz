@@ -10,11 +10,13 @@ export type Theme = 'light' | 'dark';
 export interface UserSettings {
   textSize: TextSize;
   theme: Theme;
+  answerPageTextSize?: TextSize; // 答案頁題目文字大小（可選，向後相容）
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
   textSize: 'medium',
   theme: 'light',
+  answerPageTextSize: 'medium', // 預設與一般文字大小相同
 };
 
 class SettingsService {
@@ -52,7 +54,12 @@ class SettingsService {
     try {
       const value = await AsyncStorage.getItem(USER_SETTINGS_KEY);
       if (value) {
-        return JSON.parse(value) as UserSettings;
+        const settings = JSON.parse(value) as UserSettings;
+        // 向後相容：如果沒有 answerPageTextSize，使用預設值
+        if (!settings.answerPageTextSize) {
+          settings.answerPageTextSize = DEFAULT_SETTINGS.answerPageTextSize;
+        }
+        return settings;
       }
       return DEFAULT_SETTINGS;
     } catch (error) {
@@ -84,6 +91,13 @@ class SettingsService {
     await this.setSettings(settings);
   }
 
+  // 更新答案頁題目文字大小
+  async setAnswerPageTextSize(textSize: TextSize): Promise<void> {
+    const settings = await this.getSettings();
+    settings.answerPageTextSize = textSize;
+    await this.setSettings(settings);
+  }
+
   // 獲取文字大小的實際數值（px）
   getTextSizeValue(textSize: TextSize): number {
     switch (textSize) {
@@ -100,6 +114,20 @@ class SettingsService {
 
   // 獲取標題文字大小的實際數值（px）
   getTitleTextSizeValue(textSize: TextSize): number {
+    switch (textSize) {
+      case 'small':
+        return 16;
+      case 'medium':
+        return 18;
+      case 'large':
+        return 20;
+      default:
+        return 18;
+    }
+  }
+
+  // 獲取答案頁題目文字大小的實際數值（px）
+  getAnswerPageTextSizeValue(textSize: TextSize): number {
     switch (textSize) {
       case 'small':
         return 16;

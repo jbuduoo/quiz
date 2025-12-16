@@ -9,9 +9,7 @@
     "web": "expo start --web",
     "build:android:apk": "eas build --platform android --profile preview",
     "build:android:aab": "eas build --platform android --profile production",
-    "build:ios": "eas build --platform ios --profile production",
-    "convert:excel": "node scripts/convertExcelToJSON.js",
-    "convert:csv": "node scripts/convertExcelToCSV.js"
+    "build:ios": "eas build --platform ios --profile production"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -27,13 +25,11 @@
     "react-native-safe-area-context": "^5.6.2",
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.2",
-    "react-native-webview": "13.15.0",
-    "xlsx": "^0.18.5"
+    "react-native-webview": "13.15.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.2",
     "@types/react": "~19.1.0",
-    "@types/xlsx": "^0.0.35",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.2"
   },

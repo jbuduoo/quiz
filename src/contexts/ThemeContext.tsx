@@ -4,8 +4,10 @@ import SettingsService, { TextSize, Theme, UserSettings } from '../services/Sett
 interface ThemeContextType {
   textSize: TextSize;
   theme: Theme;
+  answerPageTextSize: TextSize;
   textSizeValue: number;
   titleTextSizeValue: number;
+  answerPageTextSizeValue: number;
   colors: {
     background: string;
     surface: string;
@@ -18,6 +20,7 @@ interface ThemeContextType {
   };
   updateTextSize: (size: TextSize) => Promise<void>;
   updateTheme: (theme: Theme) => Promise<void>;
+  updateAnswerPageTextSize: (size: TextSize) => Promise<void>;
   loadSettings: () => Promise<void>;
 }
 
@@ -50,6 +53,7 @@ const darkColors = {
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [textSize, setTextSize] = useState<TextSize>('medium');
   const [theme, setTheme] = useState<Theme>('light');
+  const [answerPageTextSize, setAnswerPageTextSize] = useState<TextSize>('medium');
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSettings = async () => {
@@ -57,6 +61,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       const settings = await SettingsService.getSettings();
       setTextSize(settings.textSize);
       setTheme(settings.theme);
+      setAnswerPageTextSize(settings.answerPageTextSize || 'medium');
     } catch (error) {
       console.error('載入設定失敗:', error);
     } finally {
@@ -78,18 +83,27 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     setTheme(newTheme);
   };
 
+  const updateAnswerPageTextSize = async (size: TextSize) => {
+    await SettingsService.setAnswerPageTextSize(size);
+    setAnswerPageTextSize(size);
+  };
+
   const textSizeValue = SettingsService.getTextSizeValue(textSize);
   const titleTextSizeValue = SettingsService.getTitleTextSizeValue(textSize);
+  const answerPageTextSizeValue = SettingsService.getAnswerPageTextSizeValue(answerPageTextSize);
   const colors = theme === 'light' ? lightColors : darkColors;
 
   const value: ThemeContextType = {
     textSize,
     theme,
+    answerPageTextSize,
     textSizeValue,
     titleTextSizeValue,
+    answerPageTextSizeValue,
     colors,
     updateTextSize,
     updateTheme,
+    updateAnswerPageTextSize,
     loadSettings,
   };
 
