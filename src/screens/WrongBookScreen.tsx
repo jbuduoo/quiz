@@ -5,21 +5,23 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Switch,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Question, WrongBookFilter } from '../types';
 import QuestionService from '../services/QuestionService';
 import { RootStackParamList } from '../../App';
+import { getSubjectDisplay } from '../utils/nameMapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const WrongBookScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const insets = useSafeAreaInsets();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [filter, setFilter] = useState<WrongBookFilter>({});
   const [stats, setStats] = useState({ total: 0, wrongCount: 0, favoriteCount: 0 });
@@ -50,7 +52,11 @@ const WrongBookScreen = () => {
 
     // 取得所有科目
     const allQuestions = await QuestionService.getAllQuestions();
-    const uniqueSubjects = Array.from(new Set(allQuestions.map(q => q.subject)));
+    const uniqueSubjects = Array.from(new Set(
+      allQuestions
+        .map(q => q.subject)
+        .filter((subject): subject is string => !!subject) // 過濾掉 undefined
+    ));
     setSubjects(['全部', ...uniqueSubjects]);
 
     await loadQuestions();
@@ -99,11 +105,11 @@ const WrongBookScreen = () => {
       ? item.content.substring(0, 50) + '...'
       : item.content;
 
-    const isWrong = answerInfo?.isInWrongBook || false;
-    const isFavorite = answerInfo?.isFavorite || false;
-    const wrongCount = answerInfo?.wrongCount || 0;
-    const isAnswered = answerInfo?.isAnswered || false;
-    const isCorrect = answerInfo?.isCorrect || false;
+    const isWrong = Boolean(answerInfo?.isInWrongBook);
+    const isFavorite = Boolean(answerInfo?.isFavorite);
+    const wrongCount = typeof answerInfo?.wrongCount === 'number' ? answerInfo.wrongCount : 0;
+    const isAnswered = Boolean(answerInfo?.isAnswered);
+    const isCorrect = Boolean(answerInfo?.isCorrect);
     
     // 判斷按鈕文字
     const getButtonText = () => {
@@ -143,7 +149,7 @@ const WrongBookScreen = () => {
               {isFavorite && (
                 <Text style={styles.favoriteIcon}>❤️</Text>
               )}
-              <Text style={styles.subjectTag}>{item.subject}</Text>
+              <Text style={styles.subjectTag}>{getSubjectDisplay(item.subject)}</Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -166,7 +172,7 @@ const WrongBookScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -203,7 +209,7 @@ const WrongBookScreen = () => {
                     selectedSubject === subject && styles.subjectButtonTextActive,
                   ]}
                 >
-                  {subject}
+                  {getSubjectDisplay(subject)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -213,7 +219,7 @@ const WrongBookScreen = () => {
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>僅複習錯題</Text>
           <Switch
-            value={filter.onlyWrong || false}
+            value={Boolean(filter.onlyWrong)}
             onValueChange={handleToggleOnlyWrong}
             trackColor={{ false: '#CCCCCC', true: '#007AFF' }}
             thumbColor="#FFFFFF"
@@ -223,7 +229,7 @@ const WrongBookScreen = () => {
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>僅複習收藏題</Text>
           <Switch
-            value={filter.onlyFavorite || false}
+            value={Boolean(filter.onlyFavorite)}
             onValueChange={handleToggleOnlyFavorite}
             trackColor={{ false: '#CCCCCC', true: '#007AFF' }}
             thumbColor="#FFFFFF"
@@ -235,7 +241,7 @@ const WrongBookScreen = () => {
         data={questions}
         renderItem={renderQuestionItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom, 0) }]}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>目前沒有錯題或收藏題</Text>
@@ -262,8 +268,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   backButton: {
     width: 40,

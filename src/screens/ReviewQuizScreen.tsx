@@ -4,18 +4,23 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Alert,
   ActivityIndicator,
   Linking,
   Image,
+  Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Question, UserAnswer } from '../types';
 import QuestionService from '../services/QuestionService';
 import { RootStackParamList } from '../../App';
+import RichTextWithImages from '../components/RichTextWithImages';
+import SearchQuestionModal from '../components/SearchQuestionModal';
+import { getQuestionDisplay, separateBackgroundAndQuestion } from '../utils/questionGroupParser';
+import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ReviewQuizRouteProp = RNRouteProp<RootStackParamList, 'ReviewQuiz'>;
@@ -23,6 +28,7 @@ type ReviewQuizRouteProp = RNRouteProp<RootStackParamList, 'ReviewQuiz'>;
 const ReviewQuizScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ReviewQuizRouteProp>();
+  const insets = useSafeAreaInsets();
   const { questionId, questionIds } = route.params;
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -33,6 +39,8 @@ const ReviewQuizScreen = () => {
   const [userAnswer, setUserAnswer] = useState<UserAnswer | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showBackgroundForGroup, setShowBackgroundForGroup] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   useEffect(() => {
     loadQuestions();
@@ -43,6 +51,11 @@ const ReviewQuizScreen = () => {
       loadUserAnswer();
     }
   }, [questions, currentIndex]);
+
+  // 當題目改變時，重置背景展開狀態
+  useEffect(() => {
+    setShowBackgroundForGroup(false);
+  }, [currentIndex]);
 
   const loadQuestions = async () => {
     setLoading(true);
@@ -79,13 +92,13 @@ const ReviewQuizScreen = () => {
     const answers = await QuestionService.getUserAnswers();
     const answer = answers[currentQuestion.id];
     setUserAnswer(answer || null);
-    setIsFavorite(answer?.isFavorite || false);
+    setIsFavorite(Boolean(answer?.isFavorite));
     
     // 如果題目已經答過，恢復之前的狀態
     if (answer?.isAnswered) {
       setSelectedAnswer(answer.selectedAnswer || null);
       setShowResult(true);
-      setIsCorrect(answer.isCorrect || false);
+      setIsCorrect(Boolean(answer.isCorrect));
     } else {
       // 如果題目未答過，重置狀態
       setSelectedAnswer(null);
@@ -99,7 +112,7 @@ const ReviewQuizScreen = () => {
 
     setSelectedAnswer(option);
     const currentQuestion = questions[currentIndex];
-    const correct = option === currentQuestion.correctAnswer;
+    const correct = option === currentQuestion.Ans;
 
     setIsCorrect(correct);
     setShowResult(true);
@@ -121,14 +134,8 @@ const ReviewQuizScreen = () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
     
-    // 使用題目內容查詢 Google
-    const searchQuery = encodeURIComponent(currentQuestion.content);
-    const googleSearchUrl = `https://www.google.com/search?q=${searchQuery}`;
-    
-    Linking.openURL(googleSearchUrl).catch(err => {
-      console.error('無法開啟 Google 搜尋:', err);
-      Alert.alert('錯誤', '無法開啟 Google 搜尋');
-    });
+    // 開啟搜尋 Modal（會顯示 Google 搜尋結果，包含 AI 摘要）
+    setShowSearchModal(true);
   };
 
   const handleRemoveFromWrongBook = () => {
@@ -303,10 +310,15 @@ const ReviewQuizScreen = () => {
     ]);
   };
 
-  // 生成完整的實例編號用於問題回報
+  // 生成完整的實例編號用於問題回報（純英文數字格式）
   const getQuestionInstanceId = (question: Question, index: number): string => {
     const questionNum = question.questionNumber || (index + 1);
-    return `${question.testName}-${question.subject}-${question.series_no}-第${questionNum}題`;
+    // 使用題目中的原始欄位值（不經過 nameMapper）
+    const qTestName = question.testName || 'UNKNOWN';
+    const qSubject = question.subject || 'UNKNOWN';
+    const qSeriesNo = question.series_no || 'UNKNOWN';
+    // 格式：IPAS_02-L2111409-1（測驗名稱-科目期數-題號）
+    return `${qTestName}-${qSubject}${qSeriesNo}-${questionNum}`;
   };
 
   const handleReportProblem = () => {
@@ -316,20 +328,20 @@ const ReviewQuizScreen = () => {
     // 生成完整的實例編號
     const instanceId = getQuestionInstanceId(currentQuestion, currentIndex);
     
-    // TODO: 連到 Google 表單
-    // 預留 Google 表單連結，包含題目編號
-    Alert.alert(
-      '問題回報',
-      `題目編號：${instanceId}\n\n此功能尚未完成，請稍後再試。`,
-      [{ text: '確定' }]
-    );
+    // 開啟 Google 表單，並將題目編號作為 URL 參數傳遞（自動填入表單）
+    const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
     
-    // 未來實作時使用：
-    // const googleFormUrl = 'https://forms.google.com/your-form-id';
-    // Linking.openURL(googleFormUrl).catch(err => {
-    //   console.error('無法開啟 Google 表單:', err);
-    //   Alert.alert('錯誤', '無法開啟 Google 表單');
-    // });
+    // 直接開啟 Google 表單（不顯示確認對話框）
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      window.open(googleFormUrl, '_blank');
+    } else {
+      // 原生平台
+      Linking.openURL(googleFormUrl).catch(err => {
+        console.error('無法開啟 Google 表單:', err);
+        Alert.alert('錯誤', '無法開啟 Google 表單，請手動複製題目編號：\n\n' + instanceId);
+      });
+    }
   };
 
   if (loading || questions.length === 0) {
@@ -343,9 +355,11 @@ const ReviewQuizScreen = () => {
   const currentQuestion = questions[currentIndex];
   const progress = `${currentIndex + 1}/${questions.length}`;
   const statusLabel = isFavorite ? '我的最愛' : '';
+  const displayInfo = getQuestionDisplay(currentQuestion, questions);
+  const { background } = separateBackgroundAndQuestion(currentQuestion.content);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -365,18 +379,92 @@ const ReviewQuizScreen = () => {
         <Text style={styles.progressText}>{progress}</Text>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.content} contentContainerStyle={[styles.contentContainer, { paddingBottom: Math.max(insets.bottom, 0) }]}>
+        {/* 背景區域 - 第一題自動顯示，後續題目可展開 */}
+        {displayInfo.showBackground && displayInfo.background && (
+          <View style={styles.backgroundContainer}>
+            <View style={styles.backgroundContent}>
+              <Text style={styles.backgroundLabel}>背景說明</Text>
+              <RichTextWithImages
+                text={displayInfo.background}
+                textStyle={styles.backgroundText}
+                imageStyle={styles.backgroundImage}
+                contextText={displayInfo.background}
+                testName={currentQuestion.testName}
+                subject={currentQuestion.subject}
+                series_no={currentQuestion.series_no}
+              />
+            </View>
+            <View style={styles.backgroundDivider} />
+          </View>
+        )}
+
+        {/* 如果是題組後續題目，提供顯示背景的按鈕 */}
+        {displayInfo.isGroupQuestion && !displayInfo.showBackground && background && (
+          <View style={styles.backgroundToggleContainer}>
+            <TouchableOpacity
+              style={styles.showBackgroundButton}
+              onPress={() => setShowBackgroundForGroup(!showBackgroundForGroup)}
+            >
+              <Text style={styles.showBackgroundButtonText}>
+                {showBackgroundForGroup ? '▼ 隱藏背景說明' : '▶ 顯示背景說明'}
+              </Text>
+            </TouchableOpacity>
+            
+            {showBackgroundForGroup && background && (
+              <View style={styles.backgroundContainer}>
+                <View style={styles.backgroundContent}>
+                  <Text style={styles.backgroundLabel}>背景說明</Text>
+                  <RichTextWithImages
+                    text={background}
+                    textStyle={styles.backgroundText}
+                    imageStyle={styles.backgroundImage}
+                    contextText={background}
+                    testName={currentQuestion.testName}
+                    subject={currentQuestion.subject}
+                    series_no={currentQuestion.series_no}
+                  />
+                </View>
+                <View style={styles.backgroundDivider} />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 如果是題組後續題目但沒有背景資料，顯示提示 */}
+        {displayInfo.isGroupQuestion && !displayInfo.showBackground && !background && displayInfo.groupStartNumber && (
+          <View style={styles.groupHint}>
+            <Text style={styles.groupHintText}>
+              📖 背景說明請參閱第{displayInfo.groupStartNumber}題
+            </Text>
+          </View>
+        )}
+
         {/* 顯示題號和題目內容 */}
-        <Text style={styles.questionText}>
-          {currentQuestion.questionNumber || (currentIndex + 1)}. {currentQuestion.content}
-        </Text>
+        <View style={styles.questionContainer}>
+          <Text style={styles.questionNumber}>
+            {currentQuestion.questionNumber || (currentIndex + 1)}.
+          </Text>
+          <View style={styles.questionContent}>
+            <RichTextWithImages
+              text={displayInfo.questionText}
+              textStyle={styles.questionText}
+              imageStyle={styles.questionImage}
+              contextText={displayInfo.questionText}
+              testName={currentQuestion.testName}
+              subject={currentQuestion.subject}
+              series_no={currentQuestion.series_no}
+              questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+            />
+          </View>
+        </View>
 
         {(['A', 'B', 'C', 'D'] as const).map((option) => {
-          const optionText = currentQuestion.options[option];
-          const isSelected = selectedAnswer === option;
-          const isCorrectOption = option === currentQuestion.correctAnswer;
-          const showCorrect = showResult && isCorrectOption;
-          const showWrong = showResult && isSelected && !isCorrectOption;
+          const optionText = currentQuestion[option];
+          const isSelected = Boolean(selectedAnswer === option);
+          const isCorrectOption = Boolean(option === currentQuestion.Ans);
+          const showCorrect = Boolean(showResult && isCorrectOption);
+          const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
 
           return (
             <TouchableOpacity
@@ -388,10 +476,22 @@ const ReviewQuizScreen = () => {
                 showWrong && styles.optionButtonWrong,
               ]}
               onPress={() => handleSelectAnswer(option)}
-              disabled={showResult}
+              disabled={Boolean(showResult)}
             >
               <Text style={styles.optionLabel}>({option})</Text>
-              <Text style={styles.optionText}>{optionText}</Text>
+              <View style={styles.optionContent}>
+                <RichTextWithImages
+                  text={optionText}
+                  textStyle={styles.optionText}
+                  imageStyle={styles.optionImage}
+                  contextText={`${currentQuestion.content} ${optionText}`}
+                  testName={currentQuestion.testName}
+                  subject={currentQuestion.subject}
+                  series_no={currentQuestion.series_no}
+                  questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                  optionLabel={option}
+                />
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -421,38 +521,59 @@ const ReviewQuizScreen = () => {
               </Text>
               {!isCorrect && (
                 <Text style={styles.correctAnswerText}>
-                  正確答案：{currentQuestion.correctAnswer}
+                  正確答案：{currentQuestion.Ans}
                 </Text>
               )}
-              <Text style={styles.explanationText}>{currentQuestion.explanation}</Text>
+              <RichTextWithImages
+                text={currentQuestion.exp}
+                textStyle={styles.explanationText}
+                imageStyle={styles.explanationImage}
+                contextText={`${currentQuestion.content} ${currentQuestion.exp}`}
+                testName={currentQuestion.testName}
+                subject={currentQuestion.subject}
+                series_no={currentQuestion.series_no}
+                questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+              />
             </View>
           </>
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8) }]}>
         <TouchableOpacity
-          style={[styles.footerButton, currentIndex === 0 && styles.footerButtonDisabled]}
+          style={[styles.footerButton, styles.footerButtonNav, currentIndex === 0 && styles.footerButtonDisabled]}
           onPress={handlePrevious}
           disabled={currentIndex === 0}
         >
           <Text style={styles.footerButtonText}>上一題</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.footerButton, styles.footerButtonYellow]}
+          style={[styles.footerButton, styles.footerButtonYellow, styles.footerButtonFavorite]}
           onPress={handleToggleFavorite}
         >
-          <Text style={styles.footerButtonText}>
-            {isFavorite ? '❤️ 我的最愛' : '🤍 我的最愛'}
+          <Text style={styles.footerButtonText} numberOfLines={1}>
+            <Text style={styles.footerButtonIconText}>
+              {isFavorite ? '❤️' : '🤍'}
+            </Text>
+            {' 最愛'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.footerButton}
+          style={[styles.footerButton, styles.footerButtonNav]}
           onPress={handleNext}
         >
           <Text style={styles.footerButtonText}>下一題</Text>
         </TouchableOpacity>
       </View>
+
+      {/* 查詢問題 Modal */}
+      {currentQuestion && (
+        <SearchQuestionModal
+          visible={showSearchModal}
+          question={currentQuestion}
+          onClose={() => setShowSearchModal(false)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -473,8 +594,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   backButton: {
     width: 40,
@@ -512,6 +633,69 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 12,
   },
+  backgroundContainer: {
+    marginBottom: 20,
+    padding: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  backgroundContent: {
+    justifyContent: 'center',
+  },
+  backgroundLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 12,
+  },
+  backgroundText: {
+    fontSize: 16,
+    color: '#333333',
+    lineHeight: 24,
+  },
+  backgroundImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  backgroundDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginTop: 16,
+    marginLeft: 20,
+    marginRight: 20,
+  },
+  backgroundToggleContainer: {
+    marginBottom: 16,
+  },
+  showBackgroundButton: {
+    padding: 12,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+    marginBottom: 8,
+  },
+  showBackgroundButtonText: {
+    fontSize: 14,
+    color: '#856404',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  groupHint: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+  },
+  groupHintText: {
+    fontSize: 14,
+    color: '#856404',
+    lineHeight: 20,
+  },
   questionNumberContainer: {
     marginBottom: 8,
     paddingBottom: 6,
@@ -523,12 +707,40 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666666',
   },
+  questionContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  questionNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginRight: 8,
+    lineHeight: 26,
+  },
+  questionContent: {
+    flex: 1,
+  },
   questionText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000000',
-    marginBottom: 16,
     lineHeight: 26,
+  },
+  questionImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionImage: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  explanationImage: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   optionButton: {
     flexDirection: 'row',
@@ -646,6 +858,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginHorizontal: 4,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerButtonNav: {
+    flex: 0.8,
+  },
+  footerButtonFavorite: {
+    flex: 1.4,
   },
   footerButtonGray: {
     backgroundColor: '#999999',

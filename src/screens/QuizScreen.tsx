@@ -4,18 +4,24 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Alert,
   ActivityIndicator,
   Linking,
   Image,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Question, UserAnswer } from '../types';
 import QuestionService from '../services/QuestionService';
 import { RootStackParamList } from '../../App';
+import RichTextWithImages from '../components/RichTextWithImages';
+import SearchQuestionModal from '../components/SearchQuestionModal';
+import { getQuestionDisplay } from '../utils/questionGroupParser';
+import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
@@ -23,7 +29,9 @@ type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
 const QuizScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<QuizRouteProp>();
-  const { testName, subject, series_no, isReviewMode = false } = route.params;
+  const { testName, subject, series_no, isReviewMode } = route.params;
+  const isReviewModeBool = Boolean(isReviewMode);
+  const insets = useSafeAreaInsets();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -34,6 +42,7 @@ const QuizScreen = () => {
   const [isUncertain, setIsUncertain] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   useEffect(() => {
     loadQuestions();
@@ -49,13 +58,13 @@ const QuizScreen = () => {
     setLoading(true);
     const questionsData = await QuestionService.getQuestionsByTestNameSubjectSeries(
       testName,
-      subject,
+      subject || null, // 如果 subject 為空字串，轉換為 null
       series_no
     );
     setQuestions(questionsData);
     
     // 載入上次的進度，如果有的話
-    const savedIndex = await QuestionService.getQuizProgressByKey(testName, subject, series_no);
+    const savedIndex = await QuestionService.getQuizProgressByKey(testName, subject || null, series_no);
     if (savedIndex !== null && savedIndex >= 0 && savedIndex < questionsData.length) {
       setCurrentIndex(savedIndex);
     } else {
@@ -80,18 +89,18 @@ const QuizScreen = () => {
       // 如果題目在當前測驗中已答過，恢復之前的狀態
       setSelectedAnswer(answer.selectedAnswer || null);
       setShowResult(true);
-      setIsCorrect(answer.isCorrect || false);
-      setIsUncertain(answer?.isUncertain || false);
-      setIsFavorite(answer?.isFavorite || false);
+      setIsCorrect(Boolean(answer.isCorrect));
+      setIsUncertain(Boolean(answer?.isUncertain));
+      setIsFavorite(Boolean(answer?.isFavorite));
     } else {
       // 如果題目在當前測驗中未答過
       setSelectedAnswer(null);
       setIsCorrect(false);
       setIsUncertain(false);
-      setIsFavorite(answer?.isFavorite || false);
+      setIsFavorite(Boolean(answer?.isFavorite));
       
       // 檢視模式下，未答的題目也顯示結果（標示為未作答）
-      if (isReviewMode) {
+      if (isReviewModeBool) {
         setShowResult(true);
       } else {
         setShowResult(false);
@@ -101,11 +110,11 @@ const QuizScreen = () => {
 
   const handleSelectAnswer = async (option: 'A' | 'B' | 'C' | 'D') => {
     // 檢視模式下不允許選擇答案
-    if (isReviewMode || showResult) return;
+    if (isReviewModeBool || showResult) return;
 
     setSelectedAnswer(option);
     const currentQuestion = questions[currentIndex];
-    const correct = option === currentQuestion.correctAnswer;
+    const correct = option === currentQuestion.Ans;
 
     setIsCorrect(correct);
     setShowResult(true);
@@ -120,30 +129,18 @@ const QuizScreen = () => {
     // 答題後，收藏狀態會自動同步錯題本狀態（在 updateUserAnswer 中處理）
 
     // 保存當前進度
-    await QuestionService.saveQuizProgress(testName, subject, series_no, currentIndex);
+      await QuestionService.saveQuizProgress(testName, subject || null, series_no, currentIndex);
 
     // 重新載入用戶答案
     await loadUserAnswer();
   };
 
-  const handleSearchQuestion = async () => {
+  const handleSearchQuestion = () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
     
-    // 將題目加入錯題本
-    await QuestionService.updateUserAnswer(currentQuestion.id, {
-      isInWrongBook: true,
-    });
-    await loadUserAnswer();
-    
-    // 使用題目內容查詢 Google
-    const searchQuery = encodeURIComponent(currentQuestion.content);
-    const googleSearchUrl = `https://www.google.com/search?q=${searchQuery}`;
-    
-    Linking.openURL(googleSearchUrl).catch(err => {
-      console.error('無法開啟 Google 搜尋:', err);
-      Alert.alert('錯誤', '無法開啟 Google 搜尋');
-    });
+    // 開啟搜尋 Modal（會顯示 Google 搜尋結果，包含 AI 摘要）
+    setShowSearchModal(true);
   };
 
   // 切換收藏狀態（同步錯題本）
@@ -158,10 +155,15 @@ const QuizScreen = () => {
     await loadUserAnswer();
   };
 
-  // 生成完整的實例編號用於問題回報
+  // 生成完整的實例編號用於問題回報（純英文數字格式）
   const getQuestionInstanceId = (question: Question, index: number): string => {
     const questionNum = question.questionNumber || (index + 1);
-    return `${question.testName}-${question.subject}-${question.series_no}-第${questionNum}題`;
+    // 使用題目中的原始欄位值（不經過 nameMapper），如果沒有則使用 route.params 的值
+    const qTestName = question.testName || testName || 'UNKNOWN';
+    const qSubject = question.subject || subject || 'UNKNOWN';
+    const qSeriesNo = question.series_no || series_no || 'UNKNOWN';
+    // 格式：IPAS_02-L2111409-1（測驗名稱-科目期數-題號）
+    return `${qTestName}-${qSubject}${qSeriesNo}-${questionNum}`;
   };
 
   const handleReportProblem = async () => {
@@ -177,20 +179,20 @@ const QuizScreen = () => {
     // 生成完整的實例編號
     const instanceId = getQuestionInstanceId(currentQuestion, currentIndex);
     
-    // TODO: 連到 Google 表單
-    // 預留 Google 表單連結，包含題目編號
-    Alert.alert(
-      '問題回報',
-      `題目編號：${instanceId}\n\n此功能尚未完成，請稍後再試。`,
-      [{ text: '確定' }]
-    );
+    // 開啟 Google 表單，並將題目編號作為 URL 參數傳遞（自動填入表單）
+    const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
     
-    // 未來實作時使用：
-    // const googleFormUrl = `https://forms.google.com/your-form-id?entry.xxx=${encodeURIComponent(instanceId)}`;
-    // Linking.openURL(googleFormUrl).catch(err => {
-    //   console.error('無法開啟 Google 表單:', err);
-    //   Alert.alert('錯誤', '無法開啟 Google 表單');
-    // });
+    // 直接開啟 Google 表單（不顯示確認對話框）
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      window.open(googleFormUrl, '_blank');
+    } else {
+      // 原生平台
+      Linking.openURL(googleFormUrl).catch(err => {
+        console.error('無法開啟 Google 表單:', err);
+        Alert.alert('錯誤', '無法開啟 Google 表單，請手動複製題目編號：\n\n' + instanceId);
+      });
+    }
   };
 
   const handlePrevious = async () => {
@@ -198,7 +200,7 @@ const QuizScreen = () => {
       const newIndex = currentIndex - 1;
       setCurrentIndex(newIndex);
       // 保存進度
-      await QuestionService.saveQuizProgress(testName, subject, series_no, newIndex);
+      await QuestionService.saveQuizProgress(testName, subject || null, series_no, newIndex);
       // 不重置狀態，讓 loadUserAnswer 來恢復狀態
     }
   };
@@ -208,7 +210,7 @@ const QuizScreen = () => {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
       // 保存進度
-      await QuestionService.saveQuizProgress(testName, subject, series_no, newIndex);
+      await QuestionService.saveQuizProgress(testName, subject || null, series_no, newIndex);
       // 不重置狀態，讓 loadUserAnswer 來恢復狀態
     } else {
       // 已經是最後一題，詢問是否結束測驗
@@ -285,9 +287,9 @@ const QuizScreen = () => {
     if (typeof window !== 'undefined') {
       // Web 平台
       window.alert(scoreMessage);
-      await QuestionService.saveQuizScore(testName, subject, series_no, score);
+      await QuestionService.saveQuizScore(testName, subject || null, series_no, score);
       await QuestionService.updateProgress();
-      await QuestionService.clearQuizProgress(testName, subject, series_no);
+      await QuestionService.clearQuizProgress(testName, subject || null, series_no);
       navigation.goBack();
     } else {
       // 原生平台
@@ -350,9 +352,10 @@ const QuizScreen = () => {
 
   const currentQuestion = questions[currentIndex];
   const progress = `${currentIndex + 1}/${questions.length}`;
+  const displayInfo = getQuestionDisplay(currentQuestion, questions);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -366,24 +369,79 @@ const QuizScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {isReviewMode ? `檢視 - ${subject} ${series_no}` : `${subject} ${series_no}`}
+            {isReviewModeBool 
+              ? `檢視 - ${subject ? `${subject} ` : ''}${series_no}` 
+              : `${subject ? `${subject} ` : ''}${series_no}`}
           </Text>
         </View>
         <Text style={styles.progressText}>{progress}</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+        {/* 背景區域 - 只在第一題顯示 */}
+        {displayInfo.showBackground && displayInfo.background && (
+          <View style={styles.backgroundContainer}>
+            <Text style={styles.backgroundLabel}>背景說明</Text>
+            <RichTextWithImages
+              text={displayInfo.background}
+              textStyle={styles.backgroundText}
+              imageStyle={styles.backgroundImage}
+              contextText={displayInfo.background}
+              testName={currentQuestion.testName}
+              subject={currentQuestion.subject}
+              series_no={currentQuestion.series_no}
+            />
+            <View style={styles.backgroundDivider} />
+          </View>
+        )}
+
+        {/* 如果是題組後續題目，顯示提示 */}
+        {displayInfo.isGroupQuestion && !displayInfo.showBackground && displayInfo.groupStartNumber && (
+          <View style={styles.groupHint}>
+            <TouchableOpacity
+              onPress={() => {
+                const firstQuestionIndex = questions.findIndex(q => 
+                  q.questionNumber === displayInfo.groupStartNumber
+                );
+                if (firstQuestionIndex >= 0) {
+                  setCurrentIndex(firstQuestionIndex);
+                }
+              }}
+            >
+              <Text style={styles.groupHintText}>
+                📖 背景說明請參閱第{displayInfo.groupStartNumber}題（點擊跳轉）
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 顯示題號和題目內容 */}
-        <Text style={styles.questionText}>
-          {currentQuestion.questionNumber || (currentIndex + 1)}. {currentQuestion.content}
-        </Text>
+        <View style={styles.questionContainer}>
+          <Text style={styles.questionNumber}>
+            {currentQuestion.questionNumber || (currentIndex + 1)}.
+          </Text>
+          <View style={styles.questionContent}>
+            <RichTextWithImages
+              text={displayInfo.questionText}
+              textStyle={styles.questionText}
+              imageStyle={styles.questionImage}
+              contextText={displayInfo.questionText}
+              testName={currentQuestion.testName}
+              subject={currentQuestion.subject}
+              series_no={currentQuestion.series_no}
+              questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+              expandable={true}
+              maxLength={150}
+            />
+          </View>
+        </View>
 
         {(['A', 'B', 'C', 'D'] as const).map((option) => {
-          const optionText = currentQuestion.options[option];
-          const isSelected = selectedAnswer === option;
-          const isCorrectOption = option === currentQuestion.correctAnswer;
-          const showCorrect = showResult && isCorrectOption;
-          const showWrong = showResult && isSelected && !isCorrectOption;
+          const optionText = currentQuestion[option];
+          const isSelected = Boolean(selectedAnswer === option);
+          const isCorrectOption = Boolean(option === currentQuestion.Ans);
+          const showCorrect = Boolean(showResult && isCorrectOption);
+          const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
 
           return (
             <TouchableOpacity
@@ -395,16 +453,30 @@ const QuizScreen = () => {
                 showWrong && styles.optionButtonWrong,
               ]}
               onPress={() => handleSelectAnswer(option)}
-              disabled={isReviewMode || showResult}
+              disabled={Boolean(isReviewModeBool || showResult)}
             >
               <Text style={styles.optionLabel}>({option})</Text>
-              <Text style={styles.optionText}>{optionText}</Text>
+              <View style={styles.optionContent}>
+                <RichTextWithImages
+                  text={optionText}
+                  textStyle={styles.optionText}
+                  imageStyle={styles.optionImage}
+                  contextText={`${currentQuestion.content} ${optionText}`}
+                  testName={currentQuestion.testName}
+                  subject={currentQuestion.subject}
+                  series_no={currentQuestion.series_no}
+                  questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                  optionLabel={option}
+                  expandable={true}
+                  maxLength={100}
+                />
+              </View>
             </TouchableOpacity>
           );
         })}
 
         {/* 新增功能按鈕區域 - 檢視模式下隱藏 */}
-        {!isReviewMode && (
+        {!isReviewModeBool && (
           <View style={styles.bottomActionButtons}>
             <TouchableOpacity
               style={styles.bottomActionButton}
@@ -431,55 +503,74 @@ const QuizScreen = () => {
                 </Text>
                 {!isCorrect && (
                   <Text style={styles.correctAnswerText}>
-                    正確答案：{currentQuestion.correctAnswer}
+                    正確答案：{currentQuestion.Ans}
                   </Text>
                 )}
               </>
             ) : (
               // 檢視模式下，未答的題目顯示「未作答」
-              isReviewMode && (
+              isReviewModeBool && (
                 <Text style={[styles.resultText, { color: '#999999' }]}>
                   ⚪ 未作答
                 </Text>
               )
             )}
-            <Text style={styles.explanationText}>{currentQuestion.explanation}</Text>
+            <RichTextWithImages
+              text={currentQuestion.exp}
+              textStyle={styles.explanationText}
+              imageStyle={styles.explanationImage}
+              contextText={`${currentQuestion.content} ${currentQuestion.exp}`}
+              testName={currentQuestion.testName}
+              subject={currentQuestion.subject}
+              series_no={currentQuestion.series_no}
+              questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+            />
           </View>
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8) }]}>
         <TouchableOpacity
-          style={[styles.footerButton, currentIndex === 0 && styles.footerButtonDisabled]}
+          style={[styles.footerButton, styles.footerButtonNav, currentIndex === 0 && styles.footerButtonDisabled]}
           onPress={handlePrevious}
           disabled={currentIndex === 0}
         >
           <Text style={styles.footerButtonText}>上一題</Text>
         </TouchableOpacity>
         {/* 檢視模式下隱藏「我的最愛」按鈕 */}
-        {!isReviewMode && (
+        {!isReviewModeBool && (
           <TouchableOpacity
             style={[
               styles.footerButton,
               styles.footerButtonYellow,
+              styles.footerButtonFavorite,
             ]}
             onPress={handleToggleFavorite}
           >
-            <Text style={styles.footerButtonText}>
+            <Text style={styles.footerButtonText} numberOfLines={1}>
               <Text style={styles.footerButtonIconText}>
                 {isFavorite ? '❤️' : '🤍'}
               </Text>
-              {' 我的最愛'}
+              {' 最愛'}
             </Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          style={styles.footerButton}
+          style={[styles.footerButton, styles.footerButtonNav]}
           onPress={handleNext}
         >
           <Text style={styles.footerButtonText}>下一題</Text>
         </TouchableOpacity>
       </View>
+
+      {/* 查詢問題 Modal */}
+      {currentQuestion && (
+        <SearchQuestionModal
+          visible={showSearchModal}
+          question={currentQuestion}
+          onClose={() => setShowSearchModal(false)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -500,8 +591,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   backButton: {
     width: 40,
@@ -533,6 +624,47 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 12,
   },
+  backgroundContainer: {
+    marginBottom: 20,
+    padding: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  backgroundLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 12,
+  },
+  backgroundText: {
+    fontSize: 16,
+    color: '#333333',
+    lineHeight: 24,
+  },
+  backgroundImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  backgroundDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginTop: 16,
+  },
+  groupHint: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+  },
+  groupHintText: {
+    fontSize: 14,
+    color: '#856404',
+    lineHeight: 20,
+  },
   questionNumberContainer: {
     marginBottom: 8,
     paddingBottom: 6,
@@ -544,12 +676,40 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666666',
   },
+  questionContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  questionNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginRight: 8,
+    lineHeight: 26,
+  },
+  questionContent: {
+    flex: 1,
+  },
   questionText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000000',
-    marginBottom: 16,
     lineHeight: 26,
+  },
+  questionImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionImage: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  explanationImage: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   optionButton: {
     flexDirection: 'row',
@@ -557,7 +717,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
     padding: 8,
-    marginBottom: 6,
+    marginBottom: 4,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -641,6 +801,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginHorizontal: 4,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerButtonNav: {
+    flex: 0.8,
+  },
+  footerButtonFavorite: {
+    flex: 1.4,
   },
   footerButtonGray: {
     backgroundColor: '#999999',

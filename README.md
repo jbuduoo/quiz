@@ -1,6 +1,6 @@
-# 金融證照考試題庫 App
+# IPAS證照考試題庫 App
 
-一個功能完整的金融證照考試題庫應用程式，支援測驗練習、錯題記錄與複習功能。
+一個功能完整的IPAS考試題庫應用程式，支援測驗練習、錯題記錄與複習功能。
 
 ## 功能特色
 
@@ -306,11 +306,42 @@ quiz/
    ```bash
    npm run convert:excel
    ```
-3. 執行生成映射表腳本：
+3. 將 JSON 檔案放入對應的資料夾：`assets/data/questions/{testName}/{subject}/`
+4. 執行更新索引腳本：
    ```bash
-   node scripts/generateQuestionFileMap.js
+   node scripts/updateQuestionIndex.js
    ```
-4. 重新啟動應用程式
+5. 驗證路徑連結：
+   ```bash
+   node scripts/validatePaths.js
+   ```
+6. 重新啟動應用程式
+
+### 新增圖片
+1. 將圖片檔案放入對應資料夾：`assets/images/{testName}/{subject}/{series_no}/`
+2. 執行更新映射表腳本：
+   ```bash
+   node scripts/updateImageFileMap.js
+   ```
+3. 驗證路徑連結：
+   ```bash
+   node scripts/validatePaths.js
+   ```
+
+### 路徑驗證
+專案提供了路徑驗證腳本，用於檢查所有檔案路徑是否正確：
+
+```bash
+node scripts/validatePaths.js
+```
+
+此腳本會驗證：
+- ✅ 題目檔案路徑（questionFileMap.ts）
+- ✅ 圖片檔案路徑（imageFileMap.ts）
+- ✅ 索引檔案中的路徑引用
+- ✅ 配置檔案格式
+- ✅ 主要索引檔案結構
+- ✅ 應用程式資源
 
 ### 自訂樣式
 所有樣式定義在各個 Screen 元件的 `StyleSheet.create()` 中，可根據需求調整。
@@ -318,6 +349,25 @@ quiz/
 ### Metro Bundler 配置
 - `metro.config.js` 已配置支援 JSON 檔案載入
 - 支援按需載入題目檔案，提升載入效能
+
+### 重要腳本說明
+
+| 腳本 | 功能 | 使用時機 |
+|------|------|----------|
+| `updateQuestionIndex.js` | 更新題目索引和映射表 | 新增/修改/刪除題目檔案後 |
+| `updateImageFileMap.js` | 更新圖片映射表 | 新增/修改圖片後 |
+| `validatePaths.js` | 驗證所有路徑連結 | 新增檔案後或懷疑路徑有問題時 |
+| `validateJson.js` | 驗證 JSON 格式 | 檢查題目檔案格式是否正確 |
+| `convertExcelToJSON.js` | Excel 轉 JSON | 將 Excel 題目轉換為 JSON 格式 |
+
+## 文檔
+
+專案包含完整的文檔說明：
+
+- [README.md](./README.md) - 專案主要說明文件
+- [專案結構與路徑說明](./docs/專案結構與路徑說明.md) - 詳細的路徑結構和引用說明
+- [檔案功能說明](./docs/檔案功能說明.md) - 各檔案和腳本的功能說明
+- [題庫配置使用指南](./docs/題庫配置使用指南.md) - 題庫配置檔案的使用方法
 
 ## 已知限制
 

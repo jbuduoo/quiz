@@ -1,0 +1,109 @@
+{
+    "importDate": "2024-12-20",
+    "source": "Java_Advanced_Interview_Questions",
+    "questions": [
+      {
+        "id": "1",
+        "content": "關於 Java 語言的特性，以下哪項敘述是**錯誤**的？",
+        "A": "Java 程式碼是透過編譯器轉換成位元碼（Bytecode），然後在 Java 虛擬機器（JVM）上執行的。",
+        "B": "Java 是一種純物件導向的程式語言（Pure Object-Oriented Language）。",
+        "C": "Java 具有自動垃圾收集機制（Automatic Garbage Collection），程式設計師不需要手動管理記憶體。",
+        "D": "Java 支援多執行緒（Multi-threading），這有助於建立高效能的應用程式。",
+        "Ans": "B",
+        "exp": "Java **不是**純物件導向的語言，因為它仍包含八個基本資料類型（Primitive Data Types），例如 `int`、`char` 等，它們不是物件。純物件導向語言要求所有東西都是物件。"
+      },
+      {
+        "id": "2",
+        "content": "在 Java 中，要宣告一個**常數** (Constant) 變數，應該使用哪兩個關鍵字來修飾？",
+        "A": "`public` 和 `static`",
+        "B": "`final` 和 `static`",
+        "C": "`private` 和 `final`",
+        "D": "`abstract` 和 `volatile`",
+        "Ans": "B",
+        "exp": "要創建一個在整個程式中不變的常數，通常使用 `final` 確保值不能改變，並使用 `static` 確保它屬於類別本身而非特定物件，從而可以透過類別名直接存取。慣例上常數也會宣告為 `public`。"
+      },
+      {
+        "id": "3",
+        "content": "以下 Java 程式碼執行後的輸出結果是？\n\n```java\nint x = 5;\nSystem.out.println(x++);\n```",
+        "A": "5",
+        "B": "6",
+        "C": "4",
+        "D": "編譯錯誤",
+        "Ans": "A",
+        "exp": "後置遞增運算符 (`x++`) 會**先**使用變數的當前值（5），**再**進行遞增。因此 `println` 輸出 5，之後 `x` 的值才變為 6。"
+      },
+      {
+        "id": "4",
+        "content": "關於 **Java 記憶體管理**中的堆 (Heap) 和棧 (Stack)，以下哪項敘述是**正確**的？",
+        "A": "區域變數 (Local Variables) 儲存在堆 (Heap) 中。",
+        "B": "物件 (Object) 的實例儲存在棧 (Stack) 中。",
+        "C": "堆 (Heap) 記憶體被所有執行緒共享，而棧 (Stack) 記憶體是每個執行緒私有的。",
+        "D": "棧 (Stack) 記憶體的生命週期比堆 (Heap) 記憶體長。",
+        "Ans": "C",
+        "exp": "堆 (Heap) 用來儲存物件實例和陣列，是所有執行緒共享的。棧 (Stack) 用來儲存方法呼叫、區域變數和基本資料類型，是每個執行緒私有的。",
+        "diagram": ""
+      },
+      {
+        "id": "5",
+        "content": "在 Java 中，以下哪個類別或介面**不**屬於 Java 集合框架 (Java Collections Framework) 的一部分？",
+        "A": "`ArrayList`",
+        "B": "`String`",
+        "C": "`HashMap`",
+        "D": "`Set`",
+        "Ans": "B",
+        "exp": "`ArrayList`、`HashMap` 和 `Set` 都是集合框架的一部分，用於儲存和操作資料。`String` 類別用於處理文字資料，雖然它儲存資料，但它**不**是集合框架定義的介面（如 `Collection` 或 `Map`）的實現。"
+      },
+      {
+        "id": "6",
+        "content": "在 Java 中，以下哪種方法可以確保子類別**不能**覆寫 (Override) 父類別的方法？",
+        "A": "將父類別方法宣告為 `static`",
+        "B": "將父類別方法宣告為 `abstract`",
+        "C": "將父類別方法宣告為 `final`",
+        "D": "將父類別方法宣告為 `private`",
+        "Ans": "C",
+        "exp": "使用 `final` 關鍵字修飾方法，表示該方法是最終版本，子類別不能對其進行覆寫（Override）。`private` 方法在子類別中是不可見的，因此也不能覆寫（雖然可以宣告同名方法，但那不是覆寫）。"
+      },
+      {
+        "id": "7",
+        "content": "以下關於 **介面 (Interface)** 和 **抽象類別 (Abstract Class)** 的描述，哪一項是**正確**的？",
+        "A": "一個類別可以實現多個介面，但只能繼承一個抽象類別。",
+        "B": "介面可以包含實作的方法（從 Java 8 之後），而抽象類別不能包含實作的方法。",
+        "C": "抽象類別中的所有方法都必須被宣告為 `abstract`。",
+        "D": "介面可以宣告建構子 (Constructor)，抽象類別不能。",
+        "Ans": "A",
+        "exp": "Java 支援單一繼承（只能繼承一個類別），但支援多重實作（可以實現多個介面）。介面不能有建構子，抽象類別可以有。抽象類別可以有非抽象的實作方法。"
+      },
+      {
+        "id": "8",
+        "content": "在 Java 執行緒 (Thread) 中，以下哪個方法會導致執行緒**暫時停止執行**並釋放它當前持有的鎖定 (Lock)？",
+        "A": "`sleep()`",
+        "B": "`yield()`",
+        "C": "`wait()`",
+        "D": "`join()`",
+        "Ans": "C",
+        "exp": "`wait()` 必須在同步區塊 (synchronized block) 或方法中呼叫，它會使當前執行緒進入等待狀態，並**釋放**對象的鎖定。`sleep()` 只會暫停執行緒而不釋放鎖定。`yield()` 是讓出 CPU 時間，也不會釋放鎖定。`join()` 是等待另一個執行緒完成。"
+      },
+      {
+        "id": "9",
+        "content": "以下關於 Java 異常處理的敘述，哪一項是**錯誤**的？",
+        "A": "`try` 區塊是必需的，但 `catch` 或 `finally` 區塊至少需要其中一個。",
+        "B": "`Checked Exception`（受檢異常）必須在方法簽章中使用 `throws` 宣告或在方法體內使用 `try-catch` 處理。",
+        "C": "`Unchecked Exception`（非受檢異常）是指繼承自 `RuntimeException` 的異常，通常是程式錯誤導致。",
+        "D": "在 `finally` 區塊中拋出的異常會取代 `try` 或 `catch` 區塊中可能已經拋出的任何異常。",
+        "Ans": "D",
+        "exp": "雖然 `finally` 區塊中拋出的異常確實會取代 `try` 或 `catch` 區塊中尚未處理的異常，但更準確的說法是，`finally` 區塊中的異常會被傳遞出去，有效地**丟失**了原來的異常資訊。選項 D 的說法是正確行為，但**不是**異常處理的最佳實踐，因此在多數情況下我們視之為一個**錯誤**的設計或風險。"
+      },
+      {
+        "id": "10",
+        "content": "在 Java 8 之後引入的 Stream API 中，哪個操作符是用於將 Stream 中的每個元素轉換成另一個新的元素？",
+        "A": "`filter()`",
+        "B": "`reduce()`",
+        "C": "`map()`",
+        "D": "`collect()`",
+        "Ans": "C",
+        "exp": "`map()` 是一個中間操作 (Intermediate Operation)，它接受一個函式作為參數，並將這個函式應用於流中的每個元素，將其轉換為新的元素。例如，將字串列表轉換為它們的長度列表。`filter()` 用於篩選，`reduce()` 用於聚合，`collect()` 用於將流轉換為集合或 Map。",
+        "diagram": ""
+      }
+    ]
+  }
+  

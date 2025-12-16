@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   questionCountBadge: {
-    backgroundColor: '#FFEB3B',
+    backgroundColor: 'transparent', // 移除黃色背景
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 2,

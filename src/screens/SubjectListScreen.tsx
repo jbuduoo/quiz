@@ -5,10 +5,11 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Subject } from '../types';
@@ -18,6 +19,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import TestNameSelectorModal from '../components/TestNameSelectorModal';
 import SettingsModal from '../components/SettingsModal';
 import { RootStackParamList } from '../../App';
+import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SubjectListRouteProp = RNRouteProp<RootStackParamList, 'SubjectList'>;
@@ -32,7 +34,9 @@ const SubjectListScreen = () => {
   const [showTestNameSelector, setShowTestNameSelector] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     // 首次載入時，檢查是否有儲存的證照選擇
@@ -60,46 +64,74 @@ const SubjectListScreen = () => {
 
   const checkInitialTestName = async () => {
     try {
+      console.log('🔄 [SubjectListScreen] checkInitialTestName: 開始檢查');
       // 如果路由參數沒有 testName，嘗試從儲存中讀取
       if (!testName) {
         const savedTestName = await SettingsService.getSelectedTestName();
         if (savedTestName) {
+          console.log(`✅ [SubjectListScreen] checkInitialTestName: 找到儲存的 testName: ${savedTestName}`);
           setTestName(savedTestName);
           // 更新路由參數
           navigation.setParams({ testName: savedTestName });
         } else {
-          // 如果沒有儲存的證照，自動打開書櫃 Modal
-          setIsFirstLoad(true);
-          setShowTestNameSelector(true);
+          // 如果沒有儲存的證照，預設使用「初級」（IPAS_01）
+          console.log('⚠️ [SubjectListScreen] checkInitialTestName: 沒有儲存的 testName，使用預設值 IPAS_01');
+          const defaultTestName = 'IPAS_01';
+          setTestName(defaultTestName);
+          // 更新路由參數
+          navigation.setParams({ testName: defaultTestName });
+          // 儲存預設選擇
+          await SettingsService.setSelectedTestName(defaultTestName);
+          console.log(`✅ [SubjectListScreen] checkInitialTestName: 已設定預設 testName: ${defaultTestName}`);
         }
       } else {
+        console.log(`✅ [SubjectListScreen] checkInitialTestName: 已有 testName: ${testName}`);
         loadData();
       }
     } catch (error) {
-      console.error('檢查初始證照失敗:', error);
-      // 發生錯誤時，也打開書櫃 Modal
-      setIsFirstLoad(true);
-      setShowTestNameSelector(true);
+      console.error('❌ [SubjectListScreen] checkInitialTestName: 檢查初始證照失敗:', error);
+      // 發生錯誤時，使用預設值 IPAS_01
+      const defaultTestName = 'IPAS_01';
+      console.log(`⚠️ [SubjectListScreen] checkInitialTestName: 發生錯誤，使用預設值: ${defaultTestName}`);
+      setTestName(defaultTestName);
+      navigation.setParams({ testName: defaultTestName });
+      try {
+        await SettingsService.setSelectedTestName(defaultTestName);
+      } catch (saveError) {
+        console.error('❌ [SubjectListScreen] checkInitialTestName: 儲存預設值失敗:', saveError);
+      }
     }
   };
 
   const loadData = async () => {
     if (!testName) {
+      console.log('⚠️ [SubjectListScreen] loadData: 沒有 testName，跳過載入');
       setLoading(false);
       return;
     }
     
+    console.log(`🔄 [SubjectListScreen] loadData: 開始載入資料，testName=${testName}`);
     setLoading(true);
     try {
+      console.log('🔄 [SubjectListScreen] loadData: 呼叫 initializeData');
       await QuestionService.initializeData();
+      console.log('✅ [SubjectListScreen] loadData: initializeData 完成');
+      
       // 使用 testName 篩選科目
+      console.log('🔄 [SubjectListScreen] loadData: 取得科目列表');
       const subjectsData = await QuestionService.getSubjectsByTestName(testName);
-      console.log(`載入科目列表: testName=${testName}, 找到 ${subjectsData.length} 個科目`);
+      console.log(`✅ [SubjectListScreen] loadData: 找到 ${subjectsData.length} 個科目`);
       console.log('科目列表:', subjectsData.map(s => `${s.name} (${s.totalQuestions})`));
       setSubjects(subjectsData);
+      console.log('✅ [SubjectListScreen] loadData: 資料載入完成');
     } catch (error) {
-      console.error('載入科目列表失敗:', error);
+      console.error('❌ [SubjectListScreen] loadData: 載入科目列表失敗:', error);
+      if (error instanceof Error) {
+        console.error('❌ [SubjectListScreen] loadData: 錯誤詳情:', error.message);
+        console.error('❌ [SubjectListScreen] loadData: 錯誤堆疊:', error.stack);
+      }
     } finally {
+      console.log('✅ [SubjectListScreen] loadData: 設定 loading=false');
       setLoading(false);
     }
   };
@@ -119,81 +151,100 @@ const SubjectListScreen = () => {
     setShowTestNameSelector(false);
   };
 
-  const renderSubjectItem = ({ item }: { item: Subject }) => (
-    <TouchableOpacity
-      style={[
-        styles.subjectItem,
-        {
-          backgroundColor: colors.surface,
-          ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
-        },
-      ]}
-      onPress={() => {
-        navigation.navigate('SeriesList', {
-          testName: testName,
-          subject: item.name,
-        });
-      }}
-    >
-      <View style={styles.subjectContent}>
-        <View style={styles.subjectContainer}>
-          <Text
-            style={[
-              styles.subjectText,
-              {
-                color: colors.text,
-                fontSize: textSizeValue,
-              },
-            ]}
-          >
-            {item.name}
-          </Text>
-          <Text
-            style={[
-              styles.questionCountText,
-              {
-                color: colors.text,
-                fontSize: textSizeValue - 2,
-              },
-            ]}
-          >
-            (總題數{item.totalQuestions})
-          </Text>
-        </View>
-        <View style={styles.progressContainer}>
-          <Text
-            style={[
-              styles.progressText,
-              {
-                color: colors.textSecondary,
-                fontSize: textSizeValue - 2,
-              },
-            ]}
-          >
-            {item.completionPercentage}%
-          </Text>
-        </View>
-      </View>
-      {item.totalQuestions > 0 && (
-        <View
-          style={[
-            styles.progressBarContainer,
-            { backgroundColor: colors.border },
-          ]}
+  const renderSubjectItem = ({ item, index }: { item: Subject; index: number }) => {
+    const isHovered = hoveredIndex === index;
+    
+    return (
+      <View
+        style={[
+          styles.subjectItem,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
+          },
+          isHovered && {
+            backgroundColor: '#FFF9C4',
+            borderColor: '#FFD700',
+            borderWidth: 2,
+            marginBottom: 5, // 補償 borderWidth 增加 1px 造成的視覺差異
+          },
+        ]}
+        {...({
+          onMouseEnter: () => setHoveredIndex(index),
+          onMouseLeave: () => setHoveredIndex(null),
+        } as any)}
+      >
+        <TouchableOpacity
+          onPress={() => {
+            navigation.navigate('SeriesList', {
+              testName: testName,
+              subject: item.name,
+            });
+          }}
+          style={{ flex: 1 }}
         >
-          <View
-            style={[
-              styles.progressBar,
-              {
-                width: `${item.completionPercentage}%`,
-                backgroundColor: colors.primary,
-              },
-            ]}
-          />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+          <View style={styles.subjectContent}>
+            <View style={styles.subjectContainer}>
+              <Text
+                style={[
+                  styles.subjectText,
+                  {
+                    color: colors.text,
+                    fontSize: textSizeValue,
+                  },
+                ]}
+              >
+                {getSubjectDisplay(item.name)}
+              </Text>
+              <Text
+                style={[
+                  styles.questionCountText,
+                  {
+                    color: colors.text,
+                    fontSize: textSizeValue - 2,
+                  },
+                ]}
+              >
+                (總題數{item.totalQuestions})
+              </Text>
+            </View>
+            <View style={styles.progressContainer}>
+              <Text
+                style={[
+                  styles.progressText,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: textSizeValue - 2,
+                  },
+                ]}
+              >
+                {item.completionPercentage}%
+              </Text>
+            </View>
+          </View>
+          {item.totalQuestions > 0 && (
+            <View
+              style={[
+                styles.progressBarContainer,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.progressBar,
+                  {
+                    width: `${item.completionPercentage}%`,
+                    backgroundColor: colors.primary,
+                  },
+                ]}
+              />
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   if (loading && !testName) {
     return (
@@ -214,14 +265,16 @@ const SubjectListScreen = () => {
         styles.container,
         { backgroundColor: colors.background },
       ]}
+      edges={['top', 'bottom']}
     >
       <View
         style={[
           styles.header,
-          { backgroundColor: colors.headerBackground },
+          { 
+            backgroundColor: colors.headerBackground,
+          },
         ]}
       >
-        <View style={styles.headerLeft} />
         <Text
           style={[
             styles.headerTitle,
@@ -231,7 +284,7 @@ const SubjectListScreen = () => {
             },
           ]}
         >
-          {testName || '請選擇證照'}
+          {testName ? getTestNameDisplay(testName) : '請選擇證照'}
         </Text>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -272,9 +325,12 @@ const SubjectListScreen = () => {
       {testName ? (
         <FlatList
           data={subjects}
-          renderItem={renderSubjectItem}
+          renderItem={({ item, index }) => renderSubjectItem({ item, index })}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom, 0) },
+          ]}
         />
       ) : (
         <View style={styles.emptyContainer}>
@@ -322,21 +378,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
-  },
-  headerLeft: {
-    width: 40,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   headerTitle: {
     fontWeight: '600',
     flex: 1,
-    textAlign: 'center',
+    textAlign: 'left', // 文字靠左對齊
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 4, // 縮小間距，讓書櫃和設定更靠近
   },
   headerIconButton: {
     width: 40,
@@ -348,7 +401,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   emptyContainer: {
     flex: 1,
@@ -362,8 +416,11 @@ const styles = StyleSheet.create({
   },
   subjectItem: {
     borderRadius: 8,
-    marginBottom: 12,
-    padding: 16,
+    marginBottom: 6,
+    marginHorizontal: 0,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     ...(Platform.OS === 'web' ? {
       boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
     } : {
@@ -377,7 +434,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subjectContainer: {
     flexDirection: 'row',

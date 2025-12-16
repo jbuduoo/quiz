@@ -5,7 +5,11 @@ const crypto = require('crypto');
 
 /**
  * 從檔案名稱解析 testName, subject, series_no
- * 格式範例：信託實務_61期.xlsx -> { testName: '信託營業員', subject: '信託實務', series_no: '61期' }
+ * 支援兩種格式：
+ * 1. IPAS 格式：IPAS_01初級_L11 人工智慧基礎概論_11409.xlsx
+ *    -> testName: IPAS_01, subject: L11, series_no: 11409
+ * 2. 舊格式：信託實務_61期.xlsx
+ *    -> testName: 信託營業員, subject: 信託實務, series_no: 61期
  */
 function parseFileName(fileName) {
   // 移除副檔名
@@ -16,7 +20,36 @@ function parseFileName(fileName) {
   let subject = '';
   let series_no = '61期';
   
-  // 嘗試從檔案名稱解析
+  // 檢查是否為 IPAS 格式（包含 IPAS_ 開頭）
+  if (nameWithoutExt.startsWith('IPAS_')) {
+    // IPAS 格式：IPAS_01初級_L11 人工智慧基礎概論_11409
+    // 或：IPAS_02中級_L23機器學習技術與應用_11411
+    const parts = nameWithoutExt.split('_');
+    
+    if (parts.length >= 4) {
+      // testName: 第一個部分 + 第二個部分的前兩個字符（例如 IPAS_01）
+      // parts[0] = "IPAS"
+      // parts[1] = "01初級" -> 取前兩個字符 "01"
+      testName = parts[0] + '_' + parts[1].substring(0, 2); // IPAS_01 或 IPAS_02
+      
+      // subject: 從第三個部分提取 L 開頭的代碼（例如 L11, L23）
+      // parts[2] = "L11 人工智慧基礎概論" -> 提取 "L11"
+      const subjectPart = parts[2];
+      const subjectMatch = subjectPart.match(/L\d+/);
+      if (subjectMatch) {
+        subject = subjectMatch[0]; // L11 或 L23
+      } else {
+        subject = subjectPart; // 如果沒有匹配，使用整個部分
+      }
+      
+      // series_no: 最後一個部分（例如 11409, 11411）
+      series_no = parts[parts.length - 1];
+      
+      return { testName, subject, series_no };
+    }
+  }
+  
+  // 舊格式：信託實務_61期.xlsx
   // 格式：科目_期數 或 科目-期數
   const match = nameWithoutExt.match(/^(.+?)[_\-](.+期)$/);
   if (match) {
@@ -31,12 +64,11 @@ function parseFileName(fileName) {
 }
 
 /**
- * 生成唯一的檔案 ID（使用 hash）
+ * 生成檔案名稱（使用 testName_subject_series_no 格式）
  */
-function generateFileId(testName, subject, series_no) {
-  const key = `${testName}_${subject}_${series_no}`;
-  const hash = crypto.createHash('md5').update(key).digest('hex').substring(0, 8);
-  return `q_${hash}`;
+function generateFileName(testName, subject, series_no) {
+  // 格式：IPAS_02_L23_11411.json
+  return `${testName}_${subject}_${series_no}`;
 }
 
 /**
@@ -59,11 +91,10 @@ function convertExcelToJSON(excelPath, testName, subject, series_no) {
       return [];
     }
     
-    // 從第一行資料取得實際的 testName、subject、series_no（用於日誌顯示）
-    const firstRow = jsonData[0];
-    const actualTestName = String(firstRow['testName'] || firstRow['測驗名稱'] || firstRow['測驗'] || testName || '').trim();
-    const actualSubject = String(firstRow['subject'] || firstRow['科目'] || firstRow['類別'] || firstRow['科目名稱'] || subject || '').trim();
-    const actualSeriesNo = String(firstRow['series_no'] || firstRow['期數'] || firstRow['期'] || firstRow['series'] || series_no || '').trim().replace(/考古題/g, '').trim();
+    // 使用檔案名稱解析的值（不再從 Excel 欄位讀取）
+    const actualTestName = testName;
+    const actualSubject = subject;
+    const actualSeriesNo = series_no;
     
     // 轉換為 Question 格式
     const questions = jsonData.map((row, index) => {
@@ -114,36 +145,15 @@ function mapExcelRowToQuestion(row, index, testName, subject, series_no) {
   
   const explanation = String(row['詳解'] || row['解析'] || row['explanation'] || row['說明'] || row['解答'] || '').trim();
   
-  // 優先使用 Excel 欄位中的值，如果沒有才使用檔案名稱解析的值
-  let excelTestName = String(row['testName'] || row['測驗名稱'] || row['測驗'] || '').trim();
-  let excelSubject = String(row['subject'] || row['科目'] || row['類別'] || row['科目名稱'] || '').trim();
-  let excelSeriesNo = String(row['series_no'] || row['期數'] || row['期'] || row['series'] || '').trim();
+  // 完全使用檔案名稱解析的值（不再從 Excel 欄位讀取 testName、subject、series_no）
+  let finalTestName = testName || '信託營業員';
+  let finalSubject = subject || '';
+  let finalSeriesNo = series_no || '61期';
   
-  // 清理期數欄位中的「考古題」字樣
-  excelSeriesNo = excelSeriesNo.replace(/考古題/g, '').trim();
-  
-  // 決定最終值：優先使用 Excel 欄位，如果沒有才使用檔案名稱解析的值
-  let finalTestName = excelTestName || testName || '信託營業員';
-  let finalSubject = excelSubject || subject || '';
-  let finalSeriesNo = excelSeriesNo || series_no || '61期';
-  
-  // 如果 Excel 中沒有 subject，使用檔案名稱解析的值
-  if (!finalSubject) {
-    finalSubject = subject || '';
-  }
-  
-  // 如果 Excel 中沒有 series_no 或值為空，使用檔案名稱解析的值
-  if (!finalSeriesNo || finalSeriesNo === '' || finalSeriesNo === '61期' || !finalSeriesNo.includes('期')) {
-    finalSeriesNo = series_no || '61期';
-  }
-  
-  // 如果 Excel 中的值是 "1期" 但檔案名稱是 "01期"，使用檔案名稱的值（更精確）
-  if (finalSeriesNo === '1期' && series_no && series_no.includes('01期')) {
-    finalSeriesNo = series_no;
-  }
-  
-  // 確保 series_no 格式正確（如果有數字但沒有「期」字，補上「期」字）
-  if (finalSeriesNo && /^\d+$/.test(finalSeriesNo)) {
+  // 對於 IPAS 格式，series_no 是純數字（例如 11409），不需要「期」字
+  // 對於舊格式，series_no 可能包含「期」字（例如 61期）
+  // 如果 series_no 是純數字且 testName 不是 IPAS 開頭，補上「期」字
+  if (finalSeriesNo && /^\d+$/.test(finalSeriesNo) && !finalTestName.startsWith('IPAS_')) {
     finalSeriesNo = finalSeriesNo + '期';
   }
   
@@ -151,7 +161,7 @@ function mapExcelRowToQuestion(row, index, testName, subject, series_no) {
   const chapter = String(row['chapter'] || row['章節'] || row['單元'] || row['類別'] || row['章節名稱'] || '').trim();
   
   return {
-    id: `${finalSubject}_${finalSeriesNo}_${id}`, // 確保 ID 唯一
+    id: `${finalTestName}_${finalSubject}_${finalSeriesNo}_${id}`, // 確保 ID 唯一，格式：testName_subject_series_no_題號
     content,
     options: {
       A: optionA,
@@ -161,9 +171,7 @@ function mapExcelRowToQuestion(row, index, testName, subject, series_no) {
     },
     correctAnswer: correctAnswer,
     explanation,
-    testName: finalTestName,
-    subject: finalSubject,
-    series_no: finalSeriesNo,
+    // 移除 testName、subject、series_no，這些資訊存在 metadata 中
     ...(chapter && { chapter }), // 只有當 chapter 有值時才加入
   };
 }
@@ -221,9 +229,9 @@ function convertAllExcelFiles() {
       const actualSubject = result.actualSubject;
       const actualSeriesNo = result.actualSeriesNo;
       
-      // 生成檔案 ID
-      const fileId = generateFileId(actualTestName, actualSubject, actualSeriesNo);
-      const questionFilePath = path.join(questionsDir, `${fileId}.json`);
+      // 生成檔案名稱（格式：testName_subject_series_no）
+      const fileName = generateFileName(actualTestName, actualSubject, actualSeriesNo);
+      const questionFilePath = path.join(questionsDir, `${fileName}.json`);
       
       // 儲存題目檔案
       const questionFileData = {
@@ -244,7 +252,7 @@ function convertAllExcelFiles() {
         testName: actualTestName,
         subject: actualSubject,
         series_no: actualSeriesNo,
-        file: `questions/${fileId}.json`,
+        file: `questions/${fileName}.json`,
         count: result.questions.length,
       });
       
@@ -288,7 +296,7 @@ function convertAllExcelFiles() {
       seriesData.totalQuestions += result.questions.length;
       seriesData.questions.push(...result.questions);
       
-      console.log(`   💾 已儲存到: questions/${fileId}.json`);
+      console.log(`   💾 已儲存到: questions/${fileName}.json`);
     }
   });
   

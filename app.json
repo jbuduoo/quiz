@@ -1,17 +1,20 @@
 {
   "expo": {
-    "name": "金融證照考試題庫",
+    "name": "IPAS證照考試題庫",
     "slug": "quiz",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "assetBundlePatterns": [
-      "**/*",
-      "assets/data/**/*.json",
-      "assets/data/questions/**/*.json"
-    ],
+      "assetBundlePatterns": [
+        "**/*",
+        "assets/data/**/*.json",
+        "assets/data/questions/**/*.json",
+        "assets/config/**/*.json",
+        "assets/images/**/*.png",
+        "assets/images/**/*.jpg",
+        "assets/images/**/*.jpeg"
+      ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -22,13 +25,13 @@
       "bundleIdentifier": "com.jbuduoo.quiz",
       "buildNumber": "1",
       "infoPlist": {
-        "CFBundleDisplayName": "金融證照題庫",
+        "CFBundleDisplayName": "IPAS證照題庫",
         "CFBundleName": "題庫學習",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.jbuduoo.quiz",
+      "package": "com.jbuduoo.ipasquiz",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

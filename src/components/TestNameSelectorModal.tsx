@@ -13,6 +13,7 @@ import { TestName } from '../types';
 import QuestionService from '../services/QuestionService';
 import SettingsService from '../services/SettingsService';
 import { useTheme } from '../contexts/ThemeContext';
+import { getTestNameDisplay } from '../utils/nameMapper';
 
 interface TestNameSelectorModalProps {
   visible: boolean;
@@ -86,12 +87,12 @@ const TestNameSelectorModal: React.FC<TestNameSelectorModalProps> = ({
                 },
               ]}
             >
-              {item.name}
+              {getTestNameDisplay(item.name)}
             </Text>
             <View
               style={[
                 styles.questionCountBadge,
-                { backgroundColor: '#FFEB3B' },
+                { backgroundColor: 'transparent' },
               ]}
             >
               <Text
@@ -147,11 +148,11 @@ const TestNameSelectorModal: React.FC<TestNameSelectorModalProps> = ({
 
   return (
     <Modal
-      visible={visible}
-      transparent={true}
+      visible={Boolean(visible)}
+      transparent={Boolean(true)}
       animationType="fade"
       onRequestClose={onClose}
-      accessibilityViewIsModal={true}
+      accessibilityViewIsModal={Boolean(true)}
       {...(Platform.OS === 'web' ? {
         // Web 平台：使用 pointer-events 來防止背景交互，而不是 aria-hidden
         // 這樣可以避免無障礙警告

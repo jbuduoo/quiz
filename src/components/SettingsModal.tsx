@@ -13,7 +13,6 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { TextSize, Theme } from '../services/SettingsService';
 import SettingsService from '../services/SettingsService';
-import GeminiService from '../services/GeminiService';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -31,64 +30,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
     updateTheme,
   } = useTheme();
   
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      loadApiKey();
-    }
-  }, [visible]);
-
-  const loadApiKey = async () => {
-    try {
-      const savedKey = await SettingsService.getGeminiApiKey();
-      if (savedKey) {
-        setGeminiApiKey(savedKey);
-      } else {
-        setGeminiApiKey('');
-      }
-    } catch (error) {
-      console.error('載入 API Key 失敗:', error);
-    }
-  };
-
-  const handleSaveApiKey = async () => {
-    if (!geminiApiKey.trim()) {
-      Alert.alert('錯誤', '請輸入 Gemini API Key');
-      return;
-    }
-
-    setIsSavingApiKey(true);
-    try {
-      await GeminiService.setApiKey(geminiApiKey.trim());
-      Alert.alert('成功', 'API Key 已儲存');
-    } catch (error) {
-      Alert.alert('錯誤', '儲存 API Key 失敗');
-    } finally {
-      setIsSavingApiKey(false);
-    }
-  };
-
-  const handleClearApiKey = async () => {
-    Alert.alert(
-      '確認',
-      '確定要清除 API Key 嗎？',
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '確定',
-          style: 'destructive',
-          onPress: async () => {
-            await SettingsService.clearGeminiApiKey();
-            setGeminiApiKey('');
-            await GeminiService.setApiKey('');
-            Alert.alert('成功', 'API Key 已清除');
-          },
-        },
-      ]
-    );
-  };
 
   const textSizeOptions: { label: string; value: TextSize }[] = [
     { label: '小', value: 'small' },
@@ -103,11 +44,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
 
   return (
     <Modal
-      visible={visible}
-      transparent={true}
+      visible={Boolean(visible)}
+      transparent={Boolean(true)}
       animationType="fade"
       onRequestClose={onClose}
-      accessibilityViewIsModal={true}
+      accessibilityViewIsModal={Boolean(true)}
       {...(Platform.OS === 'web' ? {
         // Web 平台：使用 pointer-events 來防止背景交互，而不是 aria-hidden
         // 這樣可以避免無障礙警告
@@ -178,7 +119,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                   },
                 ]}
               >
-                文字大小
+                調字體大小
               </Text>
               <View style={styles.optionsContainer}>
                 {textSizeOptions.map((option) => {
@@ -293,99 +234,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
               </View>
             </View>
 
-            {/* Gemini API Key 設定 */}
-            <View style={styles.section}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  {
-                    color: colors.text,
-                    fontSize: textSizeValue,
-                  },
-                ]}
-              >
-                Gemini API Key
-              </Text>
-              <Text
-                style={[
-                  styles.sectionDescription,
-                  {
-                    color: colors.textSecondary,
-                    fontSize: textSizeValue - 2,
-                  },
-                ]}
-              >
-                輸入您的 Google Gemini API Key 以啟用 AI 功能
-              </Text>
-              <TextInput
-                style={[
-                  styles.apiKeyInput,
-                  {
-                    backgroundColor: colors.background,
-                    borderColor: colors.border,
-                    color: colors.text,
-                    fontSize: textSizeValue - 2,
-                  },
-                ]}
-                value={geminiApiKey}
-                onChangeText={setGeminiApiKey}
-                placeholder="請輸入 Gemini API Key"
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry={true}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={styles.apiKeyButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.apiKeyButton,
-                    styles.apiKeyButtonSave,
-                    {
-                      backgroundColor: colors.primary,
-                    },
-                  ]}
-                  onPress={handleSaveApiKey}
-                  disabled={isSavingApiKey}
-                >
-                  <Text
-                    style={[
-                      styles.apiKeyButtonText,
-                      {
-                        color: '#FFFFFF',
-                        fontSize: textSizeValue - 2,
-                      },
-                    ]}
-                  >
-                    {isSavingApiKey ? '儲存中...' : '儲存'}
-                  </Text>
-                </TouchableOpacity>
-                {geminiApiKey && (
-                  <TouchableOpacity
-                    style={[
-                      styles.apiKeyButton,
-                      styles.apiKeyButtonClear,
-                      {
-                        backgroundColor: colors.background,
-                        borderColor: colors.border,
-                      },
-                    ]}
-                    onPress={handleClearApiKey}
-                  >
-                    <Text
-                      style={[
-                        styles.apiKeyButtonText,
-                        {
-                          color: colors.text,
-                          fontSize: textSizeValue - 2,
-                        },
-                      ]}
-                    >
-                      清除
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
           </ScrollView>
         </View>
       </View>
@@ -472,39 +320,6 @@ const styles = StyleSheet.create({
   },
   previewText: {
     marginBottom: 4,
-  },
-  sectionDescription: {
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  apiKeyInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-    marginBottom: 12,
-    fontFamily: 'monospace',
-  },
-  apiKeyButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  apiKeyButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  apiKeyButtonSave: {
-    // backgroundColor set dynamically
-  },
-  apiKeyButtonClear: {
-    borderWidth: 1,
-  },
-  apiKeyButtonText: {
-    fontWeight: '500',
   },
 });
 

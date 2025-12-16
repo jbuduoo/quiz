@@ -45,8 +45,8 @@
 ### 3. 應用程式資訊
 
 **檢查項目：**
-- ✅ 應用程式名稱：`金融證照考試題庫`
-- ✅ iOS 顯示名稱：`金融證照考試題庫`（在 `infoPlist.CFBundleDisplayName`）
+- ✅ 應用程式名稱：`IPAS證照考試題庫`
+- ✅ iOS 顯示名稱：`IPAS證照考試題庫`（在 `infoPlist.CFBundleDisplayName`）
 - ✅ 版本號：`1.0.0`
 - ✅ 建置編號：`1`
 

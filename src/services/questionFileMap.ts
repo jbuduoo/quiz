@@ -1,28 +1,43 @@
-// 此檔案由 scripts/generateQuestionFileMap.js 自動生成
+// 此檔案由 scripts/updateQuestionIndex.js 自動生成
 // 請勿手動編輯此檔案
 
-import { Question } from '../types';
-
-interface QuestionFileData {
-  metadata: {
-    testName: string;
-    subject: string;
-    series_no: string;
-    sourceFile: string;
-    count: number;
-  };
-  questions: Question[];
-}
+import { QuestionFileData } from './QuestionService';
 
 export const questionFileMap: Record<string, () => QuestionFileData> = {
-  'questions/q_0f7eee9d.json': () => require('../../assets/data/questions/q_0f7eee9d.json'),
-  'questions/q_4660f77e.json': () => require('../../assets/data/questions/q_4660f77e.json'),
-  'questions/q_4ea9a96d.json': () => require('../../assets/data/questions/q_4ea9a96d.json'),
-  'questions/q_809c044b.json': () => require('../../assets/data/questions/q_809c044b.json'),
-  'questions/q_a403a076.json': () => require('../../assets/data/questions/q_a403a076.json'),
-  'questions/q_b3c96f79.json': () => require('../../assets/data/questions/q_b3c96f79.json'),
-  'questions/q_c04e8330.json': () => require('../../assets/data/questions/q_c04e8330.json'),
-  'questions/q_e3b6ec3e.json': () => require('../../assets/data/questions/q_e3b6ec3e.json'),
-  'questions/q_f256c22a.json': () => require('../../assets/data/questions/q_f256c22a.json'),
-  'questions/q_f7a81613.json': () => require('../../assets/data/questions/q_f7a81613.json'),
+  'questions/AZ900/part1/20251216.json': () => require('../../assets/data/questions/AZ900/part1/20251216.json'),
+  'questions/AZ900/part1/2025121602.json': () => require('../../assets/data/questions/AZ900/part1/2025121602.json'),
+  'questions/IPAS_01/L11/11401.json': () => require('../../assets/data/questions/IPAS_01/L11/11401.json'),
+  'questions/IPAS_01/L11/11409.json': () => require('../../assets/data/questions/IPAS_01/L11/11409.json'),
+  'questions/IPAS_01/L11/11411.json': () => require('../../assets/data/questions/IPAS_01/L11/11411.json'),
+  'questions/IPAS_01/L11/126092.json': () => require('../../assets/data/questions/IPAS_01/L11/126092.json'),
+  'questions/IPAS_01/L11/126093.json': () => require('../../assets/data/questions/IPAS_01/L11/126093.json'),
+  'questions/IPAS_01/L11/126094.json': () => require('../../assets/data/questions/IPAS_01/L11/126094.json'),
+  'questions/IPAS_01/L11/126105.json': () => require('../../assets/data/questions/IPAS_01/L11/126105.json'),
+  'questions/IPAS_01/L11/126874.json': () => require('../../assets/data/questions/IPAS_01/L11/126874.json'),
+  'questions/IPAS_01/L11/126875.json': () => require('../../assets/data/questions/IPAS_01/L11/126875.json'),
+  'questions/IPAS_01/L11/126876.json': () => require('../../assets/data/questions/IPAS_01/L11/126876.json'),
+  'questions/IPAS_01/L11/126909.json': () => require('../../assets/data/questions/IPAS_01/L11/126909.json'),
+  'questions/IPAS_01/L11/126924.json': () => require('../../assets/data/questions/IPAS_01/L11/126924.json'),
+  'questions/IPAS_01/L11/126932.json': () => require('../../assets/data/questions/IPAS_01/L11/126932.json'),
+  'questions/IPAS_01/L11/126942.json': () => require('../../assets/data/questions/IPAS_01/L11/126942.json'),
+  'questions/IPAS_01/L11/127045.json': () => require('../../assets/data/questions/IPAS_01/L11/127045.json'),
+  'questions/IPAS_01/L11/127151.json': () => require('../../assets/data/questions/IPAS_01/L11/127151.json'),
+  'questions/IPAS_01/L11/128026.json': () => require('../../assets/data/questions/IPAS_01/L11/128026.json'),
+  'questions/IPAS_01/L11/130994.json': () => require('../../assets/data/questions/IPAS_01/L11/130994.json'),
+  'questions/IPAS_01/L11/133864.json': () => require('../../assets/data/questions/IPAS_01/L11/133864.json'),
+  'questions/IPAS_01/L12/11409.json': () => require('../../assets/data/questions/IPAS_01/L12/11409.json'),
+  'questions/IPAS_01/L12/11411.json': () => require('../../assets/data/questions/IPAS_01/L12/11411.json'),
+  'questions/IPAS_01/L12/126077.json': () => require('../../assets/data/questions/IPAS_01/L12/126077.json'),
+  'questions/IPAS_01/L12/126078.json': () => require('../../assets/data/questions/IPAS_01/L12/126078.json'),
+  'questions/IPAS_01/L12/126079.json': () => require('../../assets/data/questions/IPAS_01/L12/126079.json'),
+  'questions/IPAS_01/L12/126859.json': () => require('../../assets/data/questions/IPAS_01/L12/126859.json'),
+  'questions/IPAS_02/L21/11409.json': () => require('../../assets/data/questions/IPAS_02/L21/11409.json'),
+  'questions/IPAS_02/L21/11411.json': () => require('../../assets/data/questions/IPAS_02/L21/11411.json'),
+  'questions/IPAS_02/L22/11409.json': () => require('../../assets/data/questions/IPAS_02/L22/11409.json'),
+  'questions/IPAS_02/L22/11411.json': () => require('../../assets/data/questions/IPAS_02/L22/11411.json'),
+  'questions/IPAS_02/L23/11409.json': () => require('../../assets/data/questions/IPAS_02/L23/11409.json'),
+  'questions/IPAS_02/L23/11411.json': () => require('../../assets/data/questions/IPAS_02/L23/11411.json'),
+  'questions/JAVA/JAVA Basic/20251216.json': () => require('../../assets/data/questions/JAVA/JAVA Basic/20251216.json'),
+  'questions/JAVA/Spring boot/20251216.json': () => require('../../assets/data/questions/JAVA/Spring boot/20251216.json'),
+  'questions/JAVA/Spring boot/20251216_basic.json': () => require('../../assets/data/questions/JAVA/Spring boot/20251216_basic.json'),
 };

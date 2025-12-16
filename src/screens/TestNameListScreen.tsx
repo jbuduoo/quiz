@@ -16,12 +16,15 @@ import QuestionService from '../services/QuestionService';
 import SettingsService from '../services/SettingsService';
 import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../../App';
+import { getTestNameDisplay, getTestNameDisplayAsync } from '../utils/nameMapper';
+import QuizLibraryConfigService from '../services/QuizLibraryConfigService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const TestNameListScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [testNames, setTestNames] = useState<TestName[]>([]);
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
@@ -38,13 +41,56 @@ const TestNameListScreen = () => {
 
   const loadData = async () => {
     setLoading(true);
+    
+    // 清除配置快取，確保載入最新配置
+    QuizLibraryConfigService.clearCache();
+    
     await QuestionService.initializeData();
-    const testNamesData = await QuestionService.getTestNames();
-    setTestNames(testNamesData);
+    const allTestNames = await QuestionService.getTestNames();
+    
+    // 過濾出啟用的題庫
+    const enabledTestNames = await QuizLibraryConfigService.getEnabledTestNames();
+    const filteredTestNames = allTestNames.filter(testName => 
+      enabledTestNames.includes(testName.name)
+    );
+    
+    // 載入每個測驗的顯示名稱
+    const namesMap: Record<string, string> = {};
+    await Promise.all(
+      filteredTestNames.map(async (testName) => {
+        const displayName = await getTestNameDisplayAsync(testName.name);
+        namesMap[testName.name] = displayName;
+      })
+    );
+    
+    setTestNames(filteredTestNames);
+    setDisplayNames(namesMap);
     setLoading(false);
   };
 
-  const renderTestNameItem = ({ item }: { item: TestName }) => (
+  const renderTestNameItem = ({ item }: { item: TestName }) => {
+    const handlePress = async () => {
+      // 儲存選擇的證照
+      await SettingsService.setSelectedTestName(item.name);
+      
+      // 檢查是否有科目
+      const subjects = await QuestionService.getSubjectsByTestName(item.name);
+      
+      if (subjects.length === 0) {
+        // 沒有科目，直接跳到期數列表（使用空字串作為 subject）
+        navigation.navigate('SeriesList', {
+          testName: item.name,
+          subject: '', // 空字串表示沒有科目
+        });
+      } else {
+        // 有科目，跳轉到科目列表
+        navigation.navigate('SubjectList', {
+          testName: item.name,
+        });
+      }
+    };
+
+    return (
     <TouchableOpacity
       style={[
         styles.testNameItem,
@@ -53,13 +99,7 @@ const TestNameListScreen = () => {
           ...(Platform.OS === 'web' ? {} : { shadowColor: colors.text }),
         },
       ]}
-      onPress={async () => {
-        // 儲存選擇的證照
-        await SettingsService.setSelectedTestName(item.name);
-        navigation.navigate('SubjectList', {
-          testName: item.name,
-        });
-      }}
+      onPress={handlePress}
     >
       <View style={styles.testNameContent}>
         <View style={styles.testNameContainer}>
@@ -72,12 +112,12 @@ const TestNameListScreen = () => {
               },
             ]}
           >
-            {item.name}
+            {displayNames[item.name] || getTestNameDisplay(item.name)}
           </Text>
           <View
             style={[
               styles.questionCountBadge,
-              { backgroundColor: '#FFEB3B' },
+              { backgroundColor: 'transparent' },
             ]}
           >
             <Text
@@ -125,7 +165,8 @@ const TestNameListScreen = () => {
         </View>
       )}
     </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (

@@ -2,17 +2,15 @@
 export interface Question {
   id: string;                    // 題目ID
   content: string;               // 題目內容
-  options: {
-    A: string;
-    B: string;
-    C: string;
-    D: string;
-  };
-  correctAnswer: 'A' | 'B' | 'C' | 'D';  // 正確答案
-  explanation: string;           // 詳解
-  testName: string;              // 測驗名稱（例如：信託營業員）
-  subject: string;               // 所屬科目（例如：信託法規）
-  series_no: string;             // 期數（例如：61期）
+  A: string;                      // 選項 A
+  B: string;                      // 選項 B
+  C: string;                      // 選項 C
+  D: string;                      // 選項 D
+  Ans: 'A' | 'B' | 'C' | 'D';    // 正確答案
+  exp: string;                    // 詳解
+  testName?: string;              // 測驗名稱（例如：信託營業員）- 可選，通常從檔案 metadata 取得
+  subject?: string;               // 所屬科目（例如：信託法規）- 可選，通常從檔案 metadata 取得
+  series_no?: string;             // 期數（例如：61期）- 可選，通常從檔案 metadata 取得
   chapter?: string;              // 所屬章節（可選，保留向後相容）
   questionNumber?: number;        // 在該期數中的題號（從1開始）
 }

@@ -5,12 +5,13 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Image,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -18,6 +19,7 @@ import { Series } from '../types';
 import QuestionService from '../services/QuestionService';
 import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../../App';
+import { getSubjectDisplay, getTestNameDisplay } from '../utils/nameMapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SeriesListRouteProp = RouteProp<RootStackParamList, 'SeriesList'>;
@@ -33,6 +35,7 @@ const SeriesListScreen = () => {
   const [isWrongBookHovered, setIsWrongBookHovered] = useState(false);
   const [wrongBookButtonText, setWrongBookButtonText] = useState('開始測驗');
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     loadData();
@@ -49,9 +52,17 @@ const SeriesListScreen = () => {
     setLoading(true);
     // 更新進度以獲取最新的正確題數和分數
     await QuestionService.updateProgress();
-    const seriesData = await QuestionService.getSeriesByTestNameAndSubject(testName, subject);
-    // 只計算當前科目的錯題數量
-    const wrongBookQuestions = await QuestionService.getWrongBookQuestions({ subject });
+    
+    // 如果 subject 為空字串，表示沒有科目，使用 getSeriesByTestNameOnly
+    const seriesData = subject 
+      ? await QuestionService.getSeriesByTestNameAndSubject(testName, subject)
+      : await QuestionService.getSeriesByTestNameOnly(testName);
+    
+    // 只計算當前科目的錯題數量（如果沒有科目，則過濾該 testName 的錯題）
+    const wrongBookQuestions = subject
+      ? await QuestionService.getWrongBookQuestions({ subject })
+      : await QuestionService.getWrongBookQuestions({ testName });
+    
     setSeries(seriesData);
     setWrongBookCount(wrongBookQuestions.length);
     
@@ -96,14 +107,14 @@ const SeriesListScreen = () => {
     const handleButtonPress = async () => {
       // 如果是重新測驗，先清空該期數的所有答題記錄
       if (isCompleted) {
-        await QuestionService.clearSeriesAnswers(testName, subject, item.name);
+        await QuestionService.clearSeriesAnswers(testName, subject || null, item.name);
         // 重新載入資料以更新顯示
         await loadData();
       }
       
       navigation.navigate('Quiz', {
         testName: testName,
-        subject: subject,
+        subject: subject || '', // 如果沒有 subject，使用空字串
         series_no: item.name,
       });
     };
@@ -121,6 +132,7 @@ const SeriesListScreen = () => {
             backgroundColor: '#FFF9C4',
             borderColor: '#FFD700',
             borderWidth: 2,
+            marginBottom: 2, // 補償 borderWidth 增加 1px 造成的視覺差異
           },
         ]}
         {...({
@@ -207,8 +219,10 @@ const SeriesListScreen = () => {
         return;
       }
 
-      // 獲取錯題本題目列表（只顯示當前科目的錯題）
-      const wrongBookQuestions = await QuestionService.getWrongBookQuestions({ subject });
+      // 獲取錯題本題目列表（只顯示當前科目的錯題，或當前測驗的錯題）
+      const wrongBookQuestions = subject
+        ? await QuestionService.getWrongBookQuestions({ subject })
+        : await QuestionService.getWrongBookQuestions({ testName });
       if (wrongBookQuestions.length === 0) {
         if (typeof window !== 'undefined') {
           window.alert('目前沒有錯題或收藏的題目');
@@ -228,8 +242,8 @@ const SeriesListScreen = () => {
             isAnswered: false,
             isCorrect: false,
             selectedAnswer: undefined,
-            isInWrongBook: answer.isInWrongBook || false, // 保留錯題本狀態
-            isFavorite: answer.isFavorite || false, // 保留收藏狀態
+            isInWrongBook: Boolean(answer.isInWrongBook), // 保留錯題本狀態
+            isFavorite: Boolean(answer.isFavorite), // 保留收藏狀態
             isUncertain: false,
             wrongCount: answer.wrongCount || 0, // 保留錯誤次數
           });
@@ -260,6 +274,7 @@ const SeriesListScreen = () => {
             backgroundColor: '#FFF9C4',
             borderColor: '#FFD700',
             borderWidth: 2,
+            marginBottom: 2, // 補償 borderWidth 增加 1px 造成的視覺差異
           },
         ]}
         {...({
@@ -267,45 +282,48 @@ const SeriesListScreen = () => {
           onMouseLeave: () => setIsWrongBookHovered(false),
         } as any)}
       >
-        <TouchableOpacity
-          style={styles.wrongBookContent}
-          onPress={handlePress}
-        >
-          <Text
-            style={[
-              styles.wrongBookText,
-              {
-                color: colors.text,
-                fontSize: textSizeValue,
-              },
-            ]}
+        <View style={styles.seriesContent}>
+          <TouchableOpacity
+            style={styles.wrongBookContent}
+            onPress={handlePress}
           >
-            複習錯題 {wrongBookCount > 0 && `(${wrongBookCount}題)`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.wrongBookActionButton,
-            {
-              backgroundColor: colors.background,
-              borderColor: colors.primary,
-            },
-          ]}
-          onPress={handlePress}
-        >
-          <Text
-            style={[
-              styles.actionButtonText,
-              {
-                color: colors.primary,
-                fontSize: textSizeValue - 2,
-              },
-            ]}
-          >
-            {wrongBookButtonText}
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.wrongBookText,
+                {
+                  color: colors.text,
+                  fontSize: textSizeValue,
+                },
+              ]}
+            >
+              複習錯題 {wrongBookCount > 0 && `(${wrongBookCount}題)`}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.primary,
+                },
+              ]}
+              onPress={handlePress}
+            >
+              <Text
+                style={[
+                  styles.actionButtonText,
+                  {
+                    color: colors.primary,
+                    fontSize: textSizeValue - 2,
+                  },
+                ]}
+              >
+                {wrongBookButtonText}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
   };
@@ -329,16 +347,28 @@ const SeriesListScreen = () => {
         styles.container,
         { backgroundColor: colors.background },
       ]}
+      edges={['top', 'bottom']}
     >
       <View
         style={[
           styles.header,
-          { backgroundColor: colors.headerBackground },
+          { 
+            backgroundColor: colors.headerBackground,
+          },
         ]}
       >
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            // 如果有科目，返回科目列表頁；否則返回測驗名稱列表頁
+            if (subject) {
+              navigation.navigate('SubjectList', {
+                testName: testName,
+              });
+            } else {
+              navigation.navigate('TestNameList');
+            }
+          }}
         >
           <Image
             source={require('../../assets/back.png')}
@@ -355,7 +385,7 @@ const SeriesListScreen = () => {
             },
           ]}
         >
-          {subject}
+          {subject ? getSubjectDisplay(subject) : getTestNameDisplay(testName)}
         </Text>
         <View style={styles.headerRight} />
       </View>
@@ -364,7 +394,10 @@ const SeriesListScreen = () => {
         data={series}
         renderItem={({ item, index }) => renderSeriesItem({ item, index })}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: Math.max(insets.bottom, 0) },
+        ]}
         ListFooterComponent={renderWrongBookItem}
       />
     </SafeAreaView>
@@ -385,8 +418,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   backButton: {
     width: 40,
@@ -407,11 +440,13 @@ const styles = StyleSheet.create({
     width: 40,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
   },
   seriesItem: {
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 3,
+    marginHorizontal: 0,
     borderWidth: 1,
     ...(Platform.OS === 'web' ? {
       boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
@@ -426,7 +461,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    // 確保所有平台都正確對齊
+    minHeight: 44, // 確保最小高度一致
   },
   seriesContainer: {
     flexDirection: 'row',
@@ -440,8 +478,11 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     flexShrink: 0,
+    gap: 8, // 統一使用 gap，所有平台都支援
+    marginLeft: 8, // 確保與左側內容有間距
   },
   actionButton: {
     borderWidth: 1,
@@ -449,6 +490,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: Platform.OS === 'web' ? 60 : undefined, // Web 平台確保最小寬度
+    marginRight: 0, // 統一設定為 0，使用 buttonContainer 的 gap 或 marginLeft
   },
   actionButtonText: {
     fontWeight: '500',
@@ -469,12 +514,11 @@ const styles = StyleSheet.create({
   },
   wrongBookItem: {
     borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 0,
+    marginBottom: 3,
+    marginHorizontal: 0,
     borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    // 使用與 seriesItem 相同的結構
     ...(Platform.OS === 'web' ? {
       boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
     } : {
@@ -486,14 +530,13 @@ const styles = StyleSheet.create({
   },
   wrongBookContent: {
     flex: 1,
-    padding: 16,
+    padding: 0, // 移除 padding，使用 seriesContent 的 padding
+    justifyContent: 'center', // 確保垂直居中對齊
+    alignItems: 'flex-start', // 確保左對齊
   },
   wrongBookText: {
     textAlign: 'left',
     fontWeight: '500',
-  },
-  wrongBookActionButton: {
-    marginRight: 16,
   },
 });
 

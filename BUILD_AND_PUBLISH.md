@@ -74,7 +74,7 @@ eas login
 ### 2. 應用程式名稱和版本
 
 確認以下資訊正確：
-- `name`: 金融證照考試題庫
+- `name`: IPAS證照考試題庫
 - `version`: 1.0.0
 - `ios.buildNumber`: 1
 - `android.versionCode`: 1
@@ -207,7 +207,7 @@ eas credentials
 3. 選擇「建立新 App」
 4. 填寫應用程式資訊：
    - **平台**：iOS
-   - **名稱**：金融證照考試題庫
+   - **名稱**：IPAS證照考試題庫
    - **主要語言**：繁體中文
    - **套件 ID**：選擇您設定的 Bundle Identifier
    - **SKU**：唯一的識別碼（例如：quiz-app-001）
@@ -385,6 +385,8 @@ eas credentials
 7. ✅ 建立正式版並提交審核
 
 祝您上架順利！🎉
+
+
 
 
 
