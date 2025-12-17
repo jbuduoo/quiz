@@ -11,6 +11,9 @@ import SeriesListScreen from './src/screens/SeriesListScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import WrongBookScreen from './src/screens/WrongBookScreen';
 import ReviewQuizScreen from './src/screens/ReviewQuizScreen';
+import ImportWebViewScreen from './src/screens/ImportWebViewScreen';
+import ImportConfigScreen from './src/screens/ImportConfigScreen';
+import { ImportedQuestionData } from './src/services/ImportService';
 
 export type RootStackParamList = {
   TestNameList: undefined;
@@ -19,6 +22,8 @@ export type RootStackParamList = {
   Quiz: { testName: string; subject: string; series_no: string; isReviewMode?: boolean };
   WrongBook: undefined;
   ReviewQuiz: { questionId: string; questionIds: string[] };
+  ImportWebView: { url?: string };
+  ImportConfig: { questionData: ImportedQuestionData; downloadUrl: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -121,6 +126,8 @@ export default function App() {
                 <Stack.Screen name="Quiz" component={QuizScreen} />
                 <Stack.Screen name="WrongBook" component={WrongBookScreen} />
                 <Stack.Screen name="ReviewQuiz" component={ReviewQuizScreen} />
+                <Stack.Screen name="ImportWebView" component={ImportWebViewScreen} />
+                <Stack.Screen name="ImportConfig" component={ImportConfigScreen} />
               </Stack.Navigator>
             </NavigationContainer>
           </View>

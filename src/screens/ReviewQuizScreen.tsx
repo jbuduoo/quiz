@@ -499,14 +499,6 @@ const ReviewQuizScreen = () => {
           </View>
         )}
 
-        {/* 如果是題組後續題目但沒有背景資料，顯示提示 */}
-        {displayInfo.isGroupQuestion && !displayInfo.showBackground && !background && displayInfo.groupStartNumber && (
-          <View style={styles.groupHint}>
-            <Text style={styles.groupHintText}>
-              📖 背景說明請參閱第{displayInfo.groupStartNumber}題
-            </Text>
-          </View>
-        )}
 
         {/* 顯示題號和題目內容 */}
         <View style={styles.questionContainer}>

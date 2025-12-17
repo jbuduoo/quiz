@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Question, UserAnswer, Chapter, TestName, Subject, Series } from '../types';
 import { questionFileMap } from './questionFileMap';
+import { loadImportedQuestionFile, getImportedQuestionFiles } from './ImportService';
 
 const USER_ANSWERS_KEY = '@quiz:userAnswers';
 const CHAPTERS_KEY = '@quiz:chapters';
@@ -138,6 +139,19 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
   }
   
   try {
+    // 優先嘗試從匯入的題庫載入（AsyncStorage）
+    try {
+      const importedQuestions = await loadImportedQuestionFile(filePath);
+      if (importedQuestions.length > 0) {
+        questionCache.set(filePath, importedQuestions);
+        console.log(`✅ 從匯入題庫載入: ${filePath} (${importedQuestions.length} 題)`);
+        return importedQuestions;
+      }
+    } catch (importError) {
+      // 如果載入匯入題庫失敗，繼續嘗試其他方法
+      console.log(`ℹ️ 無法從匯入題庫載入 ${filePath}，嘗試其他方法`);
+    }
+    
     // 從路徑解析 testName, subject, series_no
     const pathInfo = parseFilePath(filePath);
     if (!pathInfo) {
@@ -172,15 +186,16 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
               : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
             
             // 建立新的物件，確保類型正確
+            // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
             const normalizedQuestion: Question = {
               id: questionId,
-              content: String(q.content || ''),
+              content: String(q.Q || q.content || ''),
               A: String(q.A || q.options?.A || ''),
               B: String(q.B || q.options?.B || ''),
               C: String(q.C || q.options?.C || ''),
               D: String(q.D || q.options?.D || ''),
               Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
-              exp: String(q.exp || q.explanation || ''),
+              exp: String(q.Exp || q.exp || q.explanation || ''),
               questionNumber: index + 1,
               // 從路徑或 metadata 補充可選欄位
               testName: finalTestName,
@@ -233,15 +248,16 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
             const normalizedQuestions = data.questions.map((q: any, index: number) => {
               const questionId = `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`;
               
+              // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
               const normalizedQuestion: Question = {
                 id: questionId,
-                content: String(q.content || ''),
+                content: String(q.Q || q.content || ''),
                 A: String(q.A || q.options?.A || ''),
                 B: String(q.B || q.options?.B || ''),
                 C: String(q.C || q.options?.C || ''),
                 D: String(q.D || q.options?.D || ''),
                 Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
-                exp: String(q.exp || q.explanation || ''),
+                exp: String(q.Exp || q.exp || q.explanation || ''),
                 questionNumber: index + 1,
                 testName: finalTestName,
                 subject: finalSubject,
@@ -343,6 +359,9 @@ class QuestionService {
         await AsyncStorage.setItem(DATA_VERSION_KEY, currentVersion);
         console.log('✅ 已清除舊的用戶答題記錄和測驗進度（資料版本已更新）');
       }
+      
+      // 合併匯入的索引
+      await this.mergeImportedIndex();
       
       // 儲存索引資料到 AsyncStorage（用於快速存取）
       await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames));
@@ -1248,6 +1267,82 @@ class QuestionService {
       await this.updateProgress();
     } catch (error) {
       console.error('清空期數答題記錄失敗:', error);
+    }
+  }
+
+  // 合併匯入的索引到主索引
+  async mergeImportedIndex(): Promise<void> {
+    try {
+      const importedFiles = await getImportedQuestionFiles();
+      if (importedFiles.length === 0) {
+        return;
+      }
+
+      if (!this.indexData) {
+        this.indexData = await loadIndexData();
+      }
+
+      if (!this.indexData) {
+        console.warn('無法載入主索引，跳過合併匯入索引');
+        return;
+      }
+
+      // 讀取匯入索引
+      const importedIndexData = await AsyncStorage.getItem('@quiz:importedIndex');
+      if (!importedIndexData) {
+        return;
+      }
+
+      const importedData = JSON.parse(importedIndexData);
+
+      // 合併 questionFiles
+      for (const fileInfo of importedData.questionFiles || []) {
+        const exists = this.indexData.questionFiles.some(
+          f => f.file === fileInfo.file
+        );
+        if (!exists) {
+          this.indexData.questionFiles.push(fileInfo);
+        }
+      }
+
+      // 合併 testNames
+      for (const testName of importedData.testNames || []) {
+        const exists = this.indexData.testNames.some(
+          t => t.name === testName.name
+        );
+        if (!exists) {
+          this.indexData.testNames.push(testName);
+        }
+      }
+
+      // 合併 subjects
+      for (const subject of importedData.subjects || []) {
+        const exists = this.indexData.subjects.some(
+          s => s.id === subject.id
+        );
+        if (!exists) {
+          this.indexData.subjects.push(subject);
+        }
+      }
+
+      // 合併 series
+      for (const series of importedData.series || []) {
+        const exists = this.indexData.series.some(
+          s => s.id === series.id
+        );
+        if (!exists) {
+          this.indexData.series.push(series);
+        }
+      }
+
+      // 更新 AsyncStorage
+      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames));
+      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(this.indexData.subjects));
+      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series));
+
+      console.log('✅ 成功合併匯入索引');
+    } catch (error) {
+      console.error('合併匯入索引失敗:', error);
     }
   }
 }

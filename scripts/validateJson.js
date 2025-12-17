@@ -22,9 +22,12 @@ files.forEach(fileName => {
       console.error(`❌ ${fileName}: 缺少 questions 陣列`);
       errorCount++;
     } else {
-      // 檢查每個題目的格式
+      // 檢查每個題目的格式（支援新格式 Id/Q/Exp 和舊格式 id/content/exp）
       data.questions.forEach((q, index) => {
-        if (!q.id || !q.content || !q.A || !q.B || !q.C || !q.D || !q.Ans || !q.exp) {
+        const hasId = q.Id || q.id;
+        const hasContent = q.Q || q.content;
+        const hasExp = q.Exp || q.exp;
+        if (!hasId || !hasContent || !q.A || !q.B || !q.C || !q.D || !q.Ans || !hasExp) {
           console.error(`❌ ${fileName}: 題目 ${index + 1} 缺少必要欄位`);
           errorCount++;
         }

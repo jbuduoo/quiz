@@ -41,19 +41,19 @@ files.forEach(fileName => {
       return;
     }
     
-    // 簡化檔案格式
+    // 簡化檔案格式（使用新格式：Id, Q, Exp）
     const simplifiedContent = {
       importDate: new Date().toISOString().split('T')[0],
       source: content.metadata?.sourceFile || fileName,
       questions: content.questions.map((q, index) => ({
-        id: String(index + 1), // 簡化為序號
-        content: String(q.content || ''),
+        Id: String(q.Id || q.id || index + 1), // 支援新舊格式
+        Q: String(q.Q || q.content || ''),
         A: String(q.A || ''),
         B: String(q.B || ''),
         C: String(q.C || ''),
         D: String(q.D || ''),
         Ans: (q.Ans || 'A'),
-        exp: String(q.exp || '')
+        Exp: String(q.Exp || q.exp || '')
       }))
     };
     

@@ -20,7 +20,7 @@ import QuestionService from '../services/QuestionService';
 import { RootStackParamList } from '../../App';
 import RichTextWithImages from '../components/RichTextWithImages';
 import SearchQuestionModal from '../components/SearchQuestionModal';
-import { getQuestionDisplay } from '../utils/questionGroupParser';
+import { getQuestionDisplay, separateBackgroundAndQuestion } from '../utils/questionGroupParser';
 import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -45,6 +45,7 @@ const QuizScreen = () => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showBackgroundForGroup, setShowBackgroundForGroup] = useState(false);
 
   useEffect(() => {
     loadQuestions();
@@ -55,6 +56,11 @@ const QuizScreen = () => {
       loadUserAnswer();
     }
   }, [questions, currentIndex]);
+
+  // 當題目改變時，重置背景展開狀態
+  useEffect(() => {
+    setShowBackgroundForGroup(false);
+  }, [currentIndex]);
 
   const loadQuestions = async () => {
     setLoading(true);
@@ -417,6 +423,7 @@ const QuizScreen = () => {
   const currentQuestion = questions[currentIndex];
   const progress = `${currentIndex + 1}/${questions.length}`;
   const displayInfo = getQuestionDisplay(currentQuestion, questions);
+  const { background } = separateBackgroundAndQuestion(currentQuestion.content);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -448,42 +455,57 @@ const QuizScreen = () => {
           { paddingBottom: Platform.OS === 'web' ? 100 : Math.max(insets.bottom + 80, 80) }
         ]}
       >
-        {/* 背景區域 - 只在第一題顯示 */}
+        {/* 背景區域 - 第一題自動顯示，後續題目可展開 */}
         {displayInfo.showBackground && displayInfo.background && (
           <View style={styles.backgroundContainer}>
-            <Text style={styles.backgroundLabel}>背景說明</Text>
-            <RichTextWithImages
-              text={displayInfo.background}
-              textStyle={styles.backgroundText}
-              imageStyle={styles.backgroundImage}
-              contextText={displayInfo.background}
-              testName={currentQuestion.testName}
-              subject={currentQuestion.subject}
-              series_no={currentQuestion.series_no}
-            />
+            <View style={styles.backgroundContent}>
+              <Text style={styles.backgroundLabel}>背景說明</Text>
+              <RichTextWithImages
+                text={displayInfo.background}
+                textStyle={styles.backgroundText}
+                imageStyle={styles.backgroundImage}
+                contextText={displayInfo.background}
+                testName={currentQuestion.testName}
+                subject={currentQuestion.subject}
+                series_no={currentQuestion.series_no}
+              />
+            </View>
             <View style={styles.backgroundDivider} />
           </View>
         )}
 
-        {/* 如果是題組後續題目，顯示提示 */}
-        {displayInfo.isGroupQuestion && !displayInfo.showBackground && displayInfo.groupStartNumber && (
-          <View style={styles.groupHint}>
+        {/* 如果是題組後續題目，提供顯示背景的按鈕 */}
+        {displayInfo.isGroupQuestion && !displayInfo.showBackground && background && (
+          <View style={styles.backgroundToggleContainer}>
             <TouchableOpacity
-              onPress={() => {
-                const firstQuestionIndex = questions.findIndex(q => 
-                  q.questionNumber === displayInfo.groupStartNumber
-                );
-                if (firstQuestionIndex >= 0) {
-                  setCurrentIndex(firstQuestionIndex);
-                }
-              }}
+              style={styles.showBackgroundButton}
+              onPress={() => setShowBackgroundForGroup(!showBackgroundForGroup)}
             >
-              <Text style={styles.groupHintText}>
-                📖 背景說明請參閱第{displayInfo.groupStartNumber}題（點擊跳轉）
+              <Text style={styles.showBackgroundButtonText}>
+                {showBackgroundForGroup ? '▼ 隱藏背景說明' : '▶ 顯示背景說明'}
               </Text>
             </TouchableOpacity>
+            
+            {showBackgroundForGroup && background && (
+              <View style={styles.backgroundContainer}>
+                <View style={styles.backgroundContent}>
+                  <Text style={styles.backgroundLabel}>背景說明</Text>
+                  <RichTextWithImages
+                    text={background}
+                    textStyle={styles.backgroundText}
+                    imageStyle={styles.backgroundImage}
+                    contextText={background}
+                    testName={currentQuestion.testName}
+                    subject={currentQuestion.subject}
+                    series_no={currentQuestion.series_no}
+                  />
+                </View>
+                <View style={styles.backgroundDivider} />
+              </View>
+            )}
           </View>
         )}
+
 
         {/* 顯示題號和題目內容 */}
         <View style={styles.questionContainer}>
@@ -725,6 +747,26 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E0E0E0',
     marginTop: 16,
+  },
+  backgroundContent: {
+    // 背景內容容器
+  },
+  backgroundToggleContainer: {
+    marginBottom: 16,
+  },
+  showBackgroundButton: {
+    padding: 12,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+    marginBottom: 8,
+  },
+  showBackgroundButtonText: {
+    fontSize: 14,
+    color: '#856404',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   groupHint: {
     marginBottom: 16,

@@ -15,11 +15,23 @@ files.forEach(fileName => {
   
   if (data.questions && Array.isArray(data.questions)) {
     data.questions.forEach((q, index) => {
-      if (!q.exp || q.exp.trim() === '') {
-        q.exp = '此題目暫無詳細說明。';
+      // 支援新格式（Exp）和舊格式（exp）
+      const expValue = q.Exp || q.exp;
+      if (!expValue || expValue.trim() === '') {
+        // 優先使用新格式，如果不存在則建立
+        if (q.Q !== undefined || q.content !== undefined) {
+          q.Exp = '此題目暫無詳細說明。';
+          // 如果舊格式存在，也更新它（向後相容）
+          if (q.exp !== undefined) {
+            q.exp = '此題目暫無詳細說明。';
+          }
+        } else {
+          q.exp = '此題目暫無詳細說明。';
+        }
         modified = true;
         fixedCount++;
-        console.log(`修正 ${fileName} 題目 ${index + 1}: ${q.id}`);
+        const questionId = q.Id || q.id || index + 1;
+        console.log(`修正 ${fileName} 題目 ${index + 1}: ${questionId}`);
       }
     });
   }

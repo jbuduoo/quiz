@@ -10,9 +10,14 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../App';
 import { useTheme } from '../contexts/ThemeContext';
 import { TextSize, Theme } from '../services/SettingsService';
 import SettingsService from '../services/SettingsService';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface SettingsModalProps {
   visible: boolean;
@@ -20,6 +25,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
+  const navigation = useNavigation<NavigationProp>();
   const {
     textSize,
     theme,
@@ -111,6 +117,56 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
           >
+            {/* 匯入題庫 */}
+            <View style={styles.section}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    color: colors.text,
+                    fontSize: textSizeValue,
+                  },
+                ]}
+              >
+                匯入題庫
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.importButton,
+                  {
+                    backgroundColor: colors.primary,
+                  },
+                ]}
+                onPress={() => {
+                  onClose();
+                  navigation.navigate('ImportWebView');
+                }}
+              >
+                <Text
+                  style={[
+                    styles.importButtonText,
+                    {
+                      color: '#FFFFFF',
+                      fontSize: textSizeValue,
+                    },
+                  ]}
+                >
+                  📥 匯入題庫
+                </Text>
+              </TouchableOpacity>
+              <Text
+                style={[
+                  styles.importHint,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: textSizeValue - 2,
+                  },
+                ]}
+              >
+                從線上題庫網站下載並匯入題庫檔案
+              </Text>
+            </View>
+
             {/* 文字大小設定 */}
             <View style={styles.section}>
               <Text
@@ -400,6 +456,30 @@ const styles = StyleSheet.create({
   },
   previewText: {
     marginBottom: 4,
+  },
+  importButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    }),
+  },
+  importButtonText: {
+    fontWeight: '600',
+  },
+  importHint: {
+    marginTop: 4,
+    lineHeight: 18,
   },
 });
 
