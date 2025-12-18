@@ -129,17 +129,44 @@ function normalizeQuestion(
 /**
  * 從 URL 下載 JSON 檔案
  */
-export async function downloadQuestionFile(url: string): Promise<ImportedQuestionData> {
+export async function downloadQuestionFile(url: string, timeout: number = 30000): Promise<ImportedQuestionData> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`下載失敗: ${response.status} ${response.statusText}`);
+    console.log(`📋 [downloadQuestionFile] 開始下載: ${url}`);
+    
+    // 創建帶超時的 fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeout);
+    
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`下載失敗: ${response.status} ${response.statusText}`);
+      }
+      
+      console.log(`📋 [downloadQuestionFile] 開始解析 JSON`);
+      const data = await response.json() as ImportedQuestionData;
+      console.log(`✅ [downloadQuestionFile] 下載完成，題數: ${data.questions?.length || 0}`);
+      return data;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        throw new Error('下載超時，請檢查網路連線或稍後再試');
+      }
+      throw fetchError;
     }
-    const data = await response.json() as ImportedQuestionData;
-    return data;
   } catch (error) {
-    console.error('下載題庫檔案失敗:', error);
-    throw error;
+    console.error('❌ [downloadQuestionFile] 下載題庫檔案失敗:', error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('下載失敗，請確認 URL 正確且網路連線正常');
   }
 }
 

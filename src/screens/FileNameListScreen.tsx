@@ -5,13 +5,13 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Platform,
   Modal,
   Alert,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../contexts/ThemeContext';
@@ -610,6 +610,14 @@ const FileNameListScreen = () => {
                 styles.actionButton,
                 { 
                   backgroundColor: colors.primary,
+                  // 安卓和 iOS 平台：按鈕大小為 80%
+                  ...(Platform.OS !== 'web' ? {
+                    paddingHorizontal: 24 * 0.8,
+                    paddingVertical: 14.4 * 0.8,
+                    borderRadius: 7.2 * 0.8,
+                    minWidth: 120 * 0.8,
+                    minHeight: 52.8 * 0.8,
+                  } : {}),
                 },
               ]}
               onPress={handlePress}
@@ -619,7 +627,9 @@ const FileNameListScreen = () => {
                   styles.actionButtonText,
                   {
                     color: '#FFFFFF',
-                    fontSize: textSizeValue * 1.2,
+                    fontSize: Platform.OS !== 'web' 
+                      ? textSizeValue * 1.2 * 0.8 
+                      : textSizeValue * 1.2,
                   },
                 ]}
               >
@@ -651,6 +661,7 @@ const FileNameListScreen = () => {
         styles.container,
         { backgroundColor: colors.background },
       ]}
+      edges={['top', 'bottom']}
     >
       <View
         style={[
@@ -689,7 +700,15 @@ const FileNameListScreen = () => {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setShowImportModal(true)}
+                onPress={() => {
+                  // Android 平台：直接跳轉到遠端網站匯入
+                  if (Platform.OS === 'android') {
+                    handleRemoteImport();
+                  } else {
+                    // 其他平台：顯示匯入選項 Modal
+                    setShowImportModal(true);
+                  }
+                }}
                 style={styles.headerButton}
               >
                 <Text
@@ -781,16 +800,18 @@ const FileNameListScreen = () => {
               選擇匯入方式
             </Text>
 
-            <TouchableOpacity
-              style={[
-                styles.modalOption,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={handleLocalImport}
-            >
+            {/* 在 Android 上隱藏本地匯入選項 */}
+            {Platform.OS !== 'android' && (
+              <TouchableOpacity
+                style={[
+                  styles.modalOption,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={handleLocalImport}
+              >
               <Text
                 style={[
                   styles.modalOptionIcon,
@@ -824,6 +845,7 @@ const FileNameListScreen = () => {
                 </Text>
               </View>
             </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[

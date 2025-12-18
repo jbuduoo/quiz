@@ -8,14 +8,8 @@ const DEFAULT_LOCAL_SERVER_PORT = 3000;
  * 取得預設的本地伺服器 URL
  */
 export function getDefaultLocalServerUrl(): string {
-  if (Platform.OS === 'web') {
-    // Web 版本使用題庫網站
-    return 'https://jbuduoo.github.io/ExamBank/';
-  }
-  
-  // 手機版本需要區域網路 IP
-  // 這裡返回一個提示，實際 IP 需要用戶輸入或自動檢測
-  return '';
+  // 所有平台都使用相同的題庫網站，與 Web 版相同
+  return 'https://jbuduoo.github.io/ExamBank/';
 }
 
 /**

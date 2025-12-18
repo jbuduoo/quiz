@@ -5,13 +5,13 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   ActivityIndicator,
   Alert,
   Platform,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -32,14 +32,30 @@ const getFileNameFromUrl = (url: string): string => {
     if (url.includes('/')) {
       const urlObj = new URL(url);
       const pathname = urlObj.pathname;
-      const fileName = pathname.split('/').pop() || url;
+      let fileName = pathname.split('/').pop() || url;
+      // 解碼 URL 編碼的檔案名稱
+      try {
+        fileName = decodeURIComponent(fileName);
+      } catch {
+        // 如果解碼失敗，使用原始檔名
+      }
       return fileName.replace(/\.(json|xlsx|txt)$/i, '');
     }
-    // 如果已經是檔名，直接移除副檔名
-    return url.replace(/\.(json|xlsx|txt)$/i, '');
+    // 如果已經是檔名，嘗試解碼並移除副檔名
+    try {
+      const decoded = decodeURIComponent(url);
+      return decoded.replace(/\.(json|xlsx|txt)$/i, '');
+    } catch {
+      return url.replace(/\.(json|xlsx|txt)$/i, '');
+    }
   } catch {
-    // 如果解析失敗，直接移除副檔名
-    return url.replace(/\.(json|xlsx|txt)$/i, '');
+    // 如果解析失敗，嘗試解碼並移除副檔名
+    try {
+      const decoded = decodeURIComponent(url);
+      return decoded.replace(/\.(json|xlsx|txt)$/i, '');
+    } catch {
+      return url.replace(/\.(json|xlsx|txt)$/i, '');
+    }
   }
 };
 
@@ -135,10 +151,13 @@ const ImportConfigScreen = () => {
         input.click();
       }
     } else {
-      // React Native 平台：顯示 URL 輸入 Modal
+      // React Native 平台：這個功能不應該在 React Native 平台顯示
+      // 如果用戶看到這個提示，說明功能顯示邏輯有問題
+      console.warn('⚠️ [ImportConfigScreen] handleLocalImport 在 React Native 平台被調用，這不應該發生');
+      // 提供替代方案：引導用戶使用 URL 匯入或遠端網站匯入
       Alert.alert(
         '提示',
-        'React Native 平台請使用 URL 匯入功能',
+        '請使用以下方式匯入題庫：\n\n1. 點擊「遠端網站匯入」在題庫網站中下載\n2. 或使用「URL 匯入」直接輸入檔案網址',
         [{ text: '確定' }]
       );
     }
@@ -200,7 +219,10 @@ const ImportConfigScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView 
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top', 'bottom']}
+    >
       <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
         <TouchableOpacity
           style={styles.backButton}

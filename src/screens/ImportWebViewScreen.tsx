@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Platform,
@@ -12,6 +11,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { WebView } from 'react-native-webview';
@@ -156,10 +156,12 @@ const ImportWebViewScreen = () => {
   // 處理下載
   const handleDownload = async (url: string) => {
     try {
+      console.log(`📋 [ImportWebViewScreen] handleDownload: 開始下載 ${url}`);
       setLoading(true);
-      Alert.alert('下載中', '正在下載題庫檔案...', [], { cancelable: false });
 
-      const data = await downloadQuestionFile(url);
+      const data = await downloadQuestionFile(url, 30000); // 30 秒超時
+      
+      console.log(`✅ [ImportWebViewScreen] handleDownload: 下載成功`);
       
       // 導航到匯入設定畫面
       navigation.navigate('ImportConfig', {
@@ -167,10 +169,14 @@ const ImportWebViewScreen = () => {
         downloadUrl: url,
       });
     } catch (error) {
-      console.error('下載失敗:', error);
+      console.error('❌ [ImportWebViewScreen] handleDownload: 下載失敗:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : '無法下載題庫檔案';
+      
       Alert.alert(
         '下載失敗',
-        error instanceof Error ? error.message : '無法下載題庫檔案',
+        `${errorMessage}\n\n請確認：\n1. 網路連線正常\n2. URL 正確\n3. 檔案格式正確`,
         [{ text: '確定' }]
       );
     } finally {
@@ -230,10 +236,13 @@ const ImportWebViewScreen = () => {
       };
       input.click();
     } else {
-      // React Native 平台：顯示提示
+      // React Native 平台：這個按鈕不應該在 React Native 平台顯示
+      // 如果用戶看到這個提示，說明按鈕顯示邏輯有問題
+      console.warn('⚠️ [ImportWebViewScreen] handleFileSelect 在 React Native 平台被調用，這不應該發生');
+      // 提供替代方案：引導用戶使用 WebView 中的下載功能
       Alert.alert(
         '提示',
-        'React Native 平台請使用 URL 匯入功能',
+        '請在題庫網站中點擊「📥 下載題庫」按鈕來下載檔案。\n\n下載的檔案會自動匯入。',
         [{ text: '確定' }]
       );
     }
@@ -293,7 +302,10 @@ const ImportWebViewScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView 
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top', 'bottom']}
+    >
       <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -517,6 +529,16 @@ const ImportWebViewScreen = () => {
           >
             <Text style={[styles.footerButtonText, { fontSize: textSizeValue }]}>上一頁</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 下載載入指示器 */}
+      {loading && (
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.text, fontSize: textSizeValue }]}>
+            正在下載題庫檔案...
+          </Text>
         </View>
       )}
     </SafeAreaView>

@@ -217,11 +217,22 @@ const QuizScreen = () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
 
+    console.log(`📋 [QuizScreen] handleToggleFavorite: 題目ID: ${currentQuestion.id}, 平台: ${Platform.OS}`);
     const newFavoriteStatus = await QuestionService.toggleFavorite(currentQuestion.id);
+    console.log(`📋 [QuizScreen] handleToggleFavorite: 新狀態: ${newFavoriteStatus}`);
     setIsFavorite(newFavoriteStatus);
     
     // 重新載入用戶答案以更新狀態
     await loadUserAnswer();
+    
+    // 驗證狀態
+    const answers = await QuestionService.getUserAnswers();
+    const answer = answers[currentQuestion.id];
+    console.log(`✅ [QuizScreen] handleToggleFavorite: 驗證結果:`, {
+      isFavorite: answer?.isFavorite,
+      isInWrongBook: answer?.isInWrongBook,
+      同步: answer?.isFavorite === answer?.isInWrongBook
+    });
   };
 
   // 生成完整的實例編號用於問題回報（純英文數字格式）

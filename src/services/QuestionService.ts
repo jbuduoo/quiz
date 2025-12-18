@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Question, UserAnswer, Chapter, TestName, Subject, Series } from '../types';
 import { questionFileMap } from './questionFileMap';
@@ -610,7 +611,13 @@ class QuestionService {
       // 錯題本邏輯：錯題本和我的最愛是同一件事
       // 按下最愛 → 加入錯題本
       // 取消最愛 → 移除錯題本
+      const previousIsInWrongBook = updatedAnswer.isInWrongBook;
       updatedAnswer.isInWrongBook = updatedAnswer.isFavorite;
+      
+      // 記錄同步狀態（僅在狀態改變時記錄）
+      if (previousIsInWrongBook !== updatedAnswer.isInWrongBook) {
+        console.log(`📋 [updateUserAnswer] 同步錯題本狀態: isFavorite=${updatedAnswer.isFavorite} → isInWrongBook=${updatedAnswer.isInWrongBook}`);
+      }
 
       userAnswers[questionId] = updatedAnswer;
       await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
@@ -625,6 +632,8 @@ class QuestionService {
   // 切換收藏狀態（同步更新錯題本）
   async toggleFavorite(questionId: string): Promise<boolean> {
     try {
+      console.log(`📋 [toggleFavorite] 開始切換收藏狀態，題目ID: ${questionId}`);
+      console.log(`📋 [toggleFavorite] 平台: ${Platform.OS}`);
       const userAnswers = await this.getUserAnswers();
       const existingAnswer = userAnswers[questionId] || {
         questionId,
@@ -637,18 +646,34 @@ class QuestionService {
         wrongCount: 0,
       };
 
+      console.log(`📋 [toggleFavorite] 當前收藏狀態: ${existingAnswer.isFavorite}`);
       const newFavoriteStatus = !existingAnswer.isFavorite;
+      console.log(`📋 [toggleFavorite] 新收藏狀態: ${newFavoriteStatus}`);
       
       // 同步更新錯題本狀態：收藏 = 加入錯題本，取消收藏 = 移除錯題本
+      console.log(`📋 [toggleFavorite] 更新答題記錄，isFavorite: ${newFavoriteStatus}, isInWrongBook: ${newFavoriteStatus}`);
       await this.updateUserAnswer(questionId, {
         ...existingAnswer,
         isFavorite: newFavoriteStatus,
         isInWrongBook: newFavoriteStatus, // 收藏與錯題本同步
       });
 
+      // 驗證更新結果
+      const updatedAnswers = await this.getUserAnswers();
+      const updatedAnswer = updatedAnswers[questionId];
+      console.log(`✅ [toggleFavorite] 更新完成，驗證結果:`, {
+        isFavorite: updatedAnswer?.isFavorite,
+        isInWrongBook: updatedAnswer?.isInWrongBook,
+        同步: updatedAnswer?.isFavorite === updatedAnswer?.isInWrongBook
+      });
+
       return newFavoriteStatus;
     } catch (error) {
-      console.error('切換收藏狀態失敗:', error);
+      console.error('❌ [toggleFavorite] 切換收藏狀態失敗:', error);
+      if (error instanceof Error) {
+        console.error('❌ [toggleFavorite] 錯誤訊息:', error.message);
+        console.error('❌ [toggleFavorite] 錯誤堆疊:', error.stack);
+      }
       return false;
     }
   }
@@ -1286,14 +1311,16 @@ class QuestionService {
       questions.forEach(question => {
         if (userAnswers[question.id]) {
           const existingAnswer = userAnswers[question.id];
+          const isFavorite = Boolean(existingAnswer.isFavorite);
           // 保留收藏狀態，但清空所有答題相關的記錄
+          // 錯題本狀態應該與收藏狀態同步
           userAnswers[question.id] = {
             questionId: question.id,
             isCorrect: false,
             isAnswered: false,
             selectedAnswer: undefined,
-            isFavorite: Boolean(existingAnswer.isFavorite), // 保留收藏狀態
-            isInWrongBook: false, // 清空錯題本標記
+            isFavorite: isFavorite, // 保留收藏狀態
+            isInWrongBook: isFavorite, // 錯題本狀態與收藏狀態同步
             isUncertain: false, // 清空不確定標記
             wrongCount: 0, // 重置錯誤次數
           };
@@ -1324,13 +1351,14 @@ class QuestionService {
       questionIds.forEach(questionId => {
         const existingAnswer = userAnswers[questionId];
         if (existingAnswer) {
+          const isFavorite = Boolean(existingAnswer.isFavorite);
           userAnswers[questionId] = {
             questionId,
             isCorrect: false,
             isAnswered: false,
             selectedAnswer: undefined,
-            isFavorite: Boolean(existingAnswer.isFavorite), // 保留收藏狀態
-            isInWrongBook: false, // 清空錯題本標記
+            isFavorite: isFavorite, // 保留收藏狀態
+            isInWrongBook: isFavorite, // 錯題本狀態與收藏狀態同步
             isUncertain: false, // 清空不確定標記
             wrongCount: 0, // 重置錯誤次數
           };
@@ -1358,13 +1386,14 @@ class QuestionService {
       wrongBookQuestions.forEach(question => {
         if (userAnswers[question.id]) {
           const existingAnswer = userAnswers[question.id];
+          const isFavorite = Boolean(existingAnswer.isFavorite);
           userAnswers[question.id] = {
             questionId: question.id,
             isCorrect: false,
             isAnswered: false,
             selectedAnswer: undefined,
-            isFavorite: Boolean(existingAnswer.isFavorite), // 保留收藏狀態
-            isInWrongBook: false, // 清空錯題本標記
+            isFavorite: isFavorite, // 保留收藏狀態
+            isInWrongBook: isFavorite, // 錯題本狀態與收藏狀態同步
             isUncertain: false, // 清空不確定標記
             wrongCount: 0, // 重置錯誤次數
           };

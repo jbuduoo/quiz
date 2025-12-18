@@ -162,6 +162,12 @@ const SeriesListScreen = () => {
                   {
                     backgroundColor: colors.background,
                     borderColor: colors.primary,
+                    // 安卓和 iOS 平台：按鈕大小為 80%
+                    ...(Platform.OS !== 'web' ? {
+                      paddingHorizontal: 12 * 0.8,
+                      paddingVertical: 6 * 0.8,
+                      borderRadius: 4 * 0.8,
+                    } : {}),
                   },
                 ]}
                 onPress={handleViewPress}
@@ -171,7 +177,9 @@ const SeriesListScreen = () => {
                     styles.actionButtonText,
                     {
                       color: colors.primary,
-                      fontSize: textSizeValue - 2,
+                      fontSize: Platform.OS !== 'web' 
+                        ? (textSizeValue - 2) * 0.8 
+                        : textSizeValue - 2,
                     },
                   ]}
                 >
@@ -185,6 +193,12 @@ const SeriesListScreen = () => {
                 {
                   backgroundColor: colors.background,
                   borderColor: colors.primary,
+                  // 安卓和 iOS 平台：按鈕大小為 80%
+                  ...(Platform.OS !== 'web' ? {
+                    paddingHorizontal: 12 * 0.8,
+                    paddingVertical: 6 * 0.8,
+                    borderRadius: 4 * 0.8,
+                  } : {}),
                 },
               ]}
               onPress={handleButtonPress}
@@ -194,7 +208,9 @@ const SeriesListScreen = () => {
                   styles.actionButtonText,
                   {
                     color: colors.primary,
-                    fontSize: textSizeValue - 2,
+                    fontSize: Platform.OS !== 'web' 
+                      ? (textSizeValue - 2) * 0.8 
+                      : textSizeValue - 2,
                   },
                 ]}
               >
@@ -306,6 +322,12 @@ const SeriesListScreen = () => {
                 {
                   backgroundColor: colors.background,
                   borderColor: colors.primary,
+                  // 安卓和 iOS 平台：按鈕大小為 80%
+                  ...(Platform.OS !== 'web' ? {
+                    paddingHorizontal: 12 * 0.8,
+                    paddingVertical: 6 * 0.8,
+                    borderRadius: 4 * 0.8,
+                  } : {}),
                 },
               ]}
               onPress={handlePress}
@@ -315,7 +337,9 @@ const SeriesListScreen = () => {
                   styles.actionButtonText,
                   {
                     color: colors.primary,
-                    fontSize: textSizeValue - 2,
+                    fontSize: Platform.OS !== 'web' 
+                      ? (textSizeValue - 2) * 0.8 
+                      : textSizeValue - 2,
                   },
                 ]}
               >
