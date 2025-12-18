@@ -150,7 +150,7 @@ const FileNameListScreen = () => {
   // 處理遠端網站匯入
   const handleRemoteImport = () => {
     setShowImportModal(false);
-    navigation.navigate('ImportWebView');
+    navigation.navigate('ImportWebView', {});
   };
 
   const handleToggleSelect = (itemId: string) => {
@@ -222,20 +222,89 @@ const FileNameListScreen = () => {
   };
 
   const loadData = async () => {
+    console.log('📋 [FileNameListScreen] loadData: 開始載入資料');
     setLoading(true);
     
     try {
       // 載入錯題本統計
+      console.log('📋 [FileNameListScreen] loadData: 載入錯題本統計');
       const wrongBookStats = await QuestionService.getWrongBookStats();
+      console.log('📋 [FileNameListScreen] loadData: 錯題本統計:', wrongBookStats);
       setWrongBookCount(wrongBookStats.total);
       
       const fileItems: FileNameItem[] = [];
       
+      // 先添加 example.json（始終顯示在最前面，作為提示檔案）
+      console.log('📋 [FileNameListScreen] loadData: 先添加 example.json 提示檔案');
+      try {
+        const exampleFileName = 'example.json';
+        console.log(`📋 [FileNameListScreen] loadData: 處理本地檔案: ${exampleFileName}`);
+        let fileData: any;
+        
+        console.log(`📋 [FileNameListScreen] loadData: 使用 require 載入 example.json`);
+        try {
+          fileData = require('../../assets/data/questions/example.json');
+          console.log(`✅ [FileNameListScreen] loadData: example.json 載入成功`, {
+            isArray: Array.isArray(fileData),
+            hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
+            type: typeof fileData,
+            length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+          });
+        } catch (requireError) {
+          console.error(`❌ [FileNameListScreen] loadData: require example.json 失敗:`, requireError);
+          if (requireError instanceof Error) {
+            console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${requireError.message}`);
+            console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊:`, requireError.stack);
+          }
+          throw requireError;
+        }
+        
+        const displayName = '請由右上角匯入';
+        console.log(`📋 [FileNameListScreen] loadData: 顯示名稱: ${displayName}`);
+        
+        const isArray = Array.isArray(fileData);
+        const questions = isArray ? fileData : (fileData.questions || []);
+        console.log(`📋 [FileNameListScreen] loadData: 題目資料 - isArray: ${isArray}, 題數: ${questions.length}`);
+        
+        const userAnswers = await QuestionService.getUserAnswers();
+        let completedCount = 0;
+        questions.forEach((q: any, index: number) => {
+          const questionId = `${exampleFileName}_${index + 1}`;
+          const answer = userAnswers[questionId];
+          if (answer?.isAnswered && answer?.selectedAnswer !== undefined) {
+            completedCount++;
+          }
+        });
+        console.log(`📋 [FileNameListScreen] loadData: ${exampleFileName} - 完成題數: ${completedCount}/${questions.length}`);
+        
+        const fileItem = {
+          id: exampleFileName,
+          fileName: exampleFileName,
+          displayName: displayName,
+          fileCount: questions.length,
+          completedCount: completedCount,
+          importDate: isArray ? undefined : fileData.importDate,
+          source: isArray ? undefined : fileData.source,
+        };
+        console.log(`📋 [FileNameListScreen] loadData: 加入檔案項目:`, fileItem);
+        fileItems.push(fileItem);
+      } catch (error) {
+        console.error(`❌ [FileNameListScreen] loadData: 載入 example.json 失敗:`, error);
+        if (error instanceof Error) {
+          console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${error.message}`);
+          console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊:`, error.stack);
+        }
+        // 即使載入失敗，也繼續執行，不影響其他檔案
+      }
+      
       // 讀取匯入的題庫檔案
+      console.log('📋 [FileNameListScreen] loadData: 讀取匯入的題庫檔案');
       const importedFiles = await getImportedQuestionFiles();
+      console.log('📋 [FileNameListScreen] loadData: 匯入檔案列表:', importedFiles);
       
       for (const filePath of importedFiles) {
         try {
+          console.log(`📋 [FileNameListScreen] loadData: 處理匯入檔案: ${filePath}`);
           // 從檔案路徑提取資訊
           // 格式：questions/{testName}/{subject}/{series_no}.json 或 questions/{testName}/{series_no}.json
           const pathParts = filePath.replace(/^questions\//, '').split('/');
@@ -244,11 +313,17 @@ const FileNameListScreen = () => {
             ? pathParts[1].replace(/\.json$/, '')
             : pathParts[2]?.replace(/\.json$/, '') || '';
           const subject = pathParts.length === 3 ? pathParts[1] : undefined;
+          console.log(`📋 [FileNameListScreen] loadData: 解析路徑 - testName: ${testName}, subject: ${subject}, series_no: ${series_no}`);
           
           // 載入題目檔案
+          console.log(`📋 [FileNameListScreen] loadData: 載入題目檔案: ${filePath}`);
           const questions = await loadImportedQuestionFile(filePath);
+          console.log(`📋 [FileNameListScreen] loadData: 載入完成，題數: ${questions.length}`);
           
-          if (questions.length === 0) continue;
+          if (questions.length === 0) {
+            console.warn(`⚠️ [FileNameListScreen] loadData: 檔案 ${filePath} 沒有題目，跳過`);
+            continue;
+          }
           
           // 計算已完成題數
           const userAnswers = await QuestionService.getUserAnswers();
@@ -279,64 +354,32 @@ const FileNameListScreen = () => {
         }
       }
       
-      // 讀取本地打包的檔案（保留原有功能）
-      const localFileList = [
-        'IPAS_01_AI_126932-阿摩線上測驗.json',
-      ];
-      
-      for (const fileName of localFileList) {
-        try {
-          let fileData: any;
-          
-          if (fileName === 'IPAS_01_AI_126932-阿摩線上測驗.json') {
-            fileData = require('../../assets/data/questions/IPAS_01_AI_126932-阿摩線上測驗.json');
-          } else {
-            continue;
-          }
-          
-          const fileNameWithoutExt = fileName.replace(/\.json$/, '');
-          
-          const isArray = Array.isArray(fileData);
-          const questions = isArray ? fileData : (fileData.questions || []);
-          
-          const userAnswers = await QuestionService.getUserAnswers();
-          let completedCount = 0;
-          questions.forEach((q: any, index: number) => {
-            const questionId = `${fileName}_${index + 1}`;
-            const answer = userAnswers[questionId];
-            if (answer?.isAnswered && answer?.selectedAnswer !== undefined) {
-              completedCount++;
-            }
-          });
-          
-          fileItems.push({
-            id: fileName,
-            fileName: fileName,
-            displayName: fileNameWithoutExt,
-            fileCount: questions.length,
-            completedCount: completedCount,
-            importDate: isArray ? undefined : fileData.importDate,
-            source: isArray ? undefined : fileData.source,
-          });
-        } catch (error) {
-          console.error(`載入檔案 ${fileName} 失敗:`, error);
-        }
-      }
       
       // 添加錯題本項目（始終顯示）
+      console.log('📋 [FileNameListScreen] loadData: 添加錯題本項目');
       fileItems.push({
         id: 'wrong-book',
         fileName: '',
-        displayName: `複習錯題 (${wrongBookStats.total}題)`,
+        displayName: wrongBookStats.total > 0 ? `複習錯題 (${wrongBookStats.total}題)` : '錯題本',
         fileCount: wrongBookStats.total,
         completedCount: 0,
         isWrongBook: true,
       });
       
+      console.log(`✅ [FileNameListScreen] loadData: 載入完成，共 ${fileItems.length} 個項目`);
+      console.log('📋 [FileNameListScreen] loadData: 檔案項目列表:', fileItems.map(item => ({
+        id: item.id,
+        displayName: item.displayName,
+        fileCount: item.fileCount
+      })));
       setFileNames(fileItems);
       setLoading(false);
     } catch (error) {
-      console.error('載入檔案列表失敗:', error);
+      console.error('❌ [FileNameListScreen] loadData: 載入檔案列表失敗:', error);
+      if (error instanceof Error) {
+        console.error('❌ [FileNameListScreen] loadData: 錯誤訊息:', error.message);
+        console.error('❌ [FileNameListScreen] loadData: 錯誤堆疊:', error.stack);
+      }
       setLoading(false);
       setFileNames([]);
     }
@@ -378,16 +421,36 @@ const FileNameListScreen = () => {
         let questions: Question[] = [];
         
         // 判斷是匯入的檔案還是本地打包的檔案
+        console.log(`📋 [FileNameListScreen] handlePress: 處理檔案 ${item.fileName}`);
         if (item.fileName.startsWith('questions/')) {
           // 匯入的檔案：從 AsyncStorage 讀取
+          console.log(`📋 [FileNameListScreen] handlePress: 從 AsyncStorage 讀取匯入檔案: ${item.fileName}`);
           questions = await loadImportedQuestionFile(item.fileName);
+          console.log(`✅ [FileNameListScreen] handlePress: 載入完成，題數: ${questions.length}`);
         } else {
           // 本地打包的檔案：使用 require
+          console.log(`📋 [FileNameListScreen] handlePress: 使用 require 載入本地檔案: ${item.fileName}`);
           let fileData: any;
           
-          if (item.fileName === 'IPAS_01_AI_126932-阿摩線上測驗.json') {
-            fileData = require('../../assets/data/questions/IPAS_01_AI_126932-阿摩線上測驗.json');
+          if (item.fileName === 'example.json') {
+            console.log(`📋 [FileNameListScreen] handlePress: require example.json`);
+            try {
+              fileData = require('../../assets/data/questions/example.json');
+              console.log(`✅ [FileNameListScreen] handlePress: example.json 載入成功`, {
+                isArray: Array.isArray(fileData),
+                type: typeof fileData,
+                length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+              });
+            } catch (requireError) {
+              console.error(`❌ [FileNameListScreen] handlePress: require example.json 失敗:`, requireError);
+              if (requireError instanceof Error) {
+                console.error(`❌ [FileNameListScreen] handlePress: 錯誤訊息: ${requireError.message}`);
+                console.error(`❌ [FileNameListScreen] handlePress: 錯誤堆疊:`, requireError.stack);
+              }
+              throw requireError;
+            }
           } else {
+            console.error(`❌ [FileNameListScreen] handlePress: 不支援的檔案: ${item.fileName}`);
             throw new Error(`不支援的檔案: ${item.fileName}`);
           }
           
@@ -396,6 +459,7 @@ const FileNameListScreen = () => {
           // 2. 對象格式：{importDate, source, questions: [...]}
           const isArray = Array.isArray(fileData);
           const questionsData = isArray ? fileData : (fileData.questions || []);
+          console.log(`📋 [FileNameListScreen] handlePress: 解析題目資料 - isArray: ${isArray}, 題數: ${questionsData.length}`);
           
           // 標準化題目格式
           questions = questionsData.map((q: any, index: number) => ({
@@ -409,6 +473,7 @@ const FileNameListScreen = () => {
             exp: String(q.Exp || q.exp || q.explanation || ''),
             questionNumber: index + 1,
           }));
+          console.log(`✅ [FileNameListScreen] handlePress: 標準化完成，題數: ${questions.length}`);
         }
         
         if (questions.length === 0) {

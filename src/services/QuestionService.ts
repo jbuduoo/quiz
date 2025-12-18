@@ -50,48 +50,100 @@ const questionCache = new Map<string, Question[]>();
 
 // 載入索引檔案
 async function loadIndexData(): Promise<IndexData | null> {
+  console.log('📂 [loadIndexData] 開始載入索引資料');
+  console.log('📂 [loadIndexData] 時間:', new Date().toISOString());
   try {
     // 在 React Native 平台，使用 require（優先）
+    console.log('📂 [loadIndexData] 嘗試使用 require 載入索引');
     try {
+      console.log('📂 [loadIndexData] 執行 require("../../assets/data/questions.json")');
       const indexModule = require('../../assets/data/questions.json') as IndexData;
+      console.log('📂 [loadIndexData] require 成功，檢查資料結構', {
+        hasIndexModule: !!indexModule,
+        hasTestNames: !!indexModule?.testNames,
+        hasSubjects: !!indexModule?.subjects,
+        testNamesLength: indexModule?.testNames?.length,
+        subjectsLength: indexModule?.subjects?.length
+      });
       if (indexModule && indexModule.testNames && indexModule.subjects) {
-        console.log(`✅ 成功載入索引資料（${indexModule.testNames.length} 個測驗名稱）`);
+        console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.testNames.length} 個測驗名稱）`);
         return indexModule;
+      } else {
+        console.warn('⚠️ [loadIndexData] 索引資料結構不完整', {
+          hasIndexModule: !!indexModule,
+          hasTestNames: !!indexModule?.testNames,
+          hasSubjects: !!indexModule?.subjects
+        });
       }
     } catch (requireError) {
-      console.error('❌ 無法使用 require 載入索引:', requireError);
+      console.error('❌ [loadIndexData] 無法使用 require 載入索引:', requireError);
       if (requireError instanceof Error) {
-        console.error('❌ require 錯誤詳情:', requireError.message);
-        console.error('❌ require 錯誤堆疊:', requireError.stack);
+        console.error('❌ [loadIndexData] require 錯誤詳情:', requireError.message);
+        console.error('❌ [loadIndexData] require 錯誤堆疊:', requireError.stack);
+      } else {
+        console.error('❌ [loadIndexData] require 錯誤類型:', typeof requireError);
+        console.error('❌ [loadIndexData] require 錯誤內容:', requireError);
       }
     }
     
     // 在 Web 平台，使用 fetch
     if (typeof window !== 'undefined') {
+      console.log('📂 [loadIndexData] 在 Web 平台，嘗試使用 fetch 載入索引');
       try {
+        console.log('📂 [loadIndexData] 執行 fetch("/assets/data/questions.json")');
         const response = await fetch('/assets/data/questions.json');
+        console.log('📂 [loadIndexData] fetch 回應:', {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          contentType: response.headers.get('content-type')
+        });
         if (response.ok) {
           const data = await response.json() as IndexData;
+          console.log('📂 [loadIndexData] fetch JSON 解析成功', {
+            hasData: !!data,
+            hasTestNames: !!data?.testNames,
+            hasSubjects: !!data?.subjects
+          });
           if (data && data.testNames && data.subjects) {
-            console.log(`✅ 成功從 Web 載入索引資料（${data.testNames.length} 個測驗名稱）`);
+            console.log(`✅ [loadIndexData] 成功從 Web 載入索引資料（${data.testNames.length} 個測驗名稱）`);
             return data;
           }
+        } else {
+          console.error(`❌ [loadIndexData] fetch 回應失敗: ${response.status} ${response.statusText}`);
         }
       } catch (fetchError) {
-        console.warn('無法使用 fetch 載入索引:', fetchError);
+        console.error('❌ [loadIndexData] 無法使用 fetch 載入索引:', fetchError);
+        if (fetchError instanceof Error) {
+          console.error('❌ [loadIndexData] fetch 錯誤詳情:', fetchError.message);
+          console.error('❌ [loadIndexData] fetch 錯誤堆疊:', fetchError.stack);
+        }
       }
+    } else {
+      console.log('📂 [loadIndexData] 不在 Web 平台，跳過 fetch');
     }
     
-    console.error('❌ 所有載入索引的方法都失敗了');
+    console.error('❌ [loadIndexData] 所有載入索引的方法都失敗了');
     return null;
   } catch (error) {
-    console.error('❌ 載入索引資料失敗:', error);
+    console.error('❌ [loadIndexData] 載入索引資料失敗:', error);
     if (error instanceof Error) {
-      console.error('❌ 錯誤詳情:', error.message);
-      console.error('❌ 錯誤堆疊:', error.stack);
+      console.error('❌ [loadIndexData] 錯誤詳情:', error.message);
+      console.error('❌ [loadIndexData] 錯誤堆疊:', error.stack);
+    } else {
+      console.error('❌ [loadIndexData] 錯誤類型:', typeof error);
+      console.error('❌ [loadIndexData] 錯誤內容:', error);
     }
     return null;
   }
+}
+
+// 移除問題開頭的編號（例如 "1. " 或 "2 "）
+function removeQuestionNumberPrefix(text: string): string {
+  if (!text) return text;
+  // 匹配開頭的編號格式：數字 + 可選的點 + 空格
+  // 例如："1. "、"2 "、"10. " 等
+  return text.replace(/^\d+\.?\s+/, '');
 }
 
 // 從檔案路徑解析 testName, subject, series_no
@@ -187,9 +239,13 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
             
             // 建立新的物件，確保類型正確
             // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
+            // 移除問題開頭的編號
+            const rawContent = String(q.Q || q.content || '');
+            const cleanedContent = removeQuestionNumberPrefix(rawContent);
+            
             const normalizedQuestion: Question = {
               id: questionId,
-              content: String(q.Q || q.content || ''),
+              content: cleanedContent,
               A: String(q.A || q.options?.A || ''),
               B: String(q.B || q.options?.B || ''),
               C: String(q.C || q.options?.C || ''),
@@ -249,9 +305,13 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
               const questionId = `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`;
               
               // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
+              // 移除問題開頭的編號
+              const rawContent = String(q.Q || q.content || '');
+              const cleanedContent = removeQuestionNumberPrefix(rawContent);
+              
               const normalizedQuestion: Question = {
                 id: questionId,
-                content: String(q.Q || q.content || ''),
+                content: cleanedContent,
                 A: String(q.A || q.options?.A || ''),
                 B: String(q.B || q.options?.B || ''),
                 C: String(q.C || q.options?.C || ''),
@@ -260,7 +320,7 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
                 exp: String(q.Exp || q.exp || q.explanation || ''),
                 questionNumber: index + 1,
                 testName: finalTestName,
-                subject: finalSubject,
+                subject: finalSubject || undefined, // 將 null 轉換為 undefined
                 series_no: finalSeriesNo,
                 chapter: q.chapter || undefined,
               };
@@ -294,15 +354,22 @@ class QuestionService {
   // 初始化資料
   async initializeData(): Promise<void> {
     console.log('🚀 [initializeData] 開始初始化資料');
+    console.log('🚀 [initializeData] 時間:', new Date().toISOString());
     const currentVersion = '3.0.0'; // 當前版本：支援資料夾結構，簡化檔案格式
     
     try {
+      console.log('📋 [initializeData] 讀取資料版本');
       const dataVersion = await AsyncStorage.getItem(DATA_VERSION_KEY);
       console.log(`📋 [initializeData] 當前資料版本: ${dataVersion}, 目標版本: ${currentVersion}`);
       
       // 載入索引資料
       console.log('📂 [initializeData] 開始載入索引資料');
+      console.log('📂 [initializeData] 呼叫 loadIndexData()');
       this.indexData = await loadIndexData();
+      console.log('📂 [initializeData] loadIndexData() 完成', {
+        hasIndexData: !!this.indexData,
+        testNamesCount: this.indexData?.testNames?.length || 0
+      });
       
       if (!this.indexData) {
         console.error('❌ [initializeData] 無法載入索引資料，嘗試從 AsyncStorage 恢復');

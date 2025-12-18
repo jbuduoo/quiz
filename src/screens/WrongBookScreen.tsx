@@ -124,16 +124,9 @@ const WrongBookScreen = () => {
       // 重新載入答案
       const updatedAnswers = await QuestionService.getUserAnswers();
       answer = updatedAnswers[currentQuestion.id];
-    } else if (!answer.isFavorite) {
-      // 如果題目在列表中但未收藏，自動設置為已收藏
-      await QuestionService.updateUserAnswer(currentQuestion.id, {
-        isFavorite: true,
-        isInWrongBook: true,
-      });
-      // 重新載入答案
-      const updatedAnswers = await QuestionService.getUserAnswers();
-      answer = updatedAnswers[currentQuestion.id];
     }
+    // 注意：不再自動將未收藏的題目設置為已收藏
+    // 因為用戶可能已經點擊最愛按鈕取消了收藏，我們應該尊重用戶的選擇
     
     if (answer) {
       setUserAnswer(answer);
@@ -277,10 +270,21 @@ const WrongBookScreen = () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
 
+    // 直接切換收藏狀態，不需要確認對話框
+    await performToggleFavorite();
+  };
+
+  const performToggleFavorite = async () => {
+    const currentQuestion = questions[currentIndex];
+    if (!currentQuestion) return;
+
+    // 保存當前題目 ID，用於判斷是否被移除
+    const currentQuestionId = currentQuestion.id;
+    const savedCurrentIndex = currentIndex;
+    
+    // 切換收藏狀態
     const newFavoriteStatus = await QuestionService.toggleFavorite(currentQuestion.id);
     setIsFavorite(newFavoriteStatus);
-    
-    await loadUserAnswer();
     
     // 如果取消收藏，重新載入題目列表（因為該題目應該從列表中移除）
     if (!newFavoriteStatus) {
@@ -296,26 +300,45 @@ const WrongBookScreen = () => {
       
       // 如果還有其他題目
       if (questionsData.length > 0) {
-        // 更新題目列表
+        // 檢查當前題目是否還在列表中
+        const currentQuestionStillExists = questionsData.some(q => q.id === currentQuestionId);
+        
+        let newIndex: number;
+        if (!currentQuestionStillExists) {
+          // 當前題目已被移除，跳轉到下一題或上一題
+          if (savedCurrentIndex < questionsData.length) {
+            // 如果當前索引還在範圍內，保持在相同索引位置（會顯示下一題）
+            newIndex = savedCurrentIndex;
+          } else {
+            // 如果當前索引超出範圍，跳轉到最後一題
+            newIndex = questionsData.length - 1;
+          }
+        } else {
+          // 當前題目還在列表中，找到當前題目在新列表中的位置
+          const foundIndex = questionsData.findIndex(q => q.id === currentQuestionId);
+          if (foundIndex !== -1) {
+            newIndex = foundIndex;
+          } else {
+            // 如果找不到（理論上不應該發生），跳轉到第一題
+            newIndex = 0;
+          }
+        }
+        
+        // 先更新題目列表
         setQuestions(questionsData);
         
-        // 調整索引：如果當前索引超出範圍，跳轉到最後一題
-        const newIndex = currentIndex >= questionsData.length 
-          ? questionsData.length - 1 
-          : currentIndex;
+        // 然後更新索引（useEffect 會自動觸發 loadUserAnswer）
         setCurrentIndex(newIndex);
-        
-        // 重新載入用戶答案以更新狀態
-        await loadUserAnswer();
       } else {
         // 沒有其他題目了，返回上一頁
         setQuestions([]);
         navigation.goBack();
       }
     } else {
-      // 重新載入統計資料
+      // 重新載入統計資料和用戶答案
       const statsData = await QuestionService.getWrongBookStats();
       setStats(statsData);
+      await loadUserAnswer();
     }
   };
 

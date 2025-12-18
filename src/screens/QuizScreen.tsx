@@ -79,16 +79,27 @@ const QuizScreen = () => {
           // 所有平台都使用 require，讓 Metro bundler 打包檔案
           let fileData: any;
           
-          if (directFileName === 'IPAS_01_AI_126932-阿摩線上測驗.json') {
-            fileData = require('../../assets/data/questions/IPAS_01_AI_126932-阿摩線上測驗.json');
+          console.log(`📋 [QuizScreen] loadQuestions: 嘗試載入本地檔案: ${directFileName}`);
+          if (directFileName === 'example.json') {
+            console.log(`📋 [QuizScreen] loadQuestions: require example.json`);
+            try {
+              fileData = require('../../assets/data/questions/example.json');
+              console.log(`✅ [QuizScreen] loadQuestions: example.json 載入成功`);
+            } catch (requireError) {
+              console.error(`❌ [QuizScreen] loadQuestions: require example.json 失敗:`, requireError);
+            }
+          } else {
+            console.warn(`⚠️ [QuizScreen] loadQuestions: 不支援的檔案: ${directFileName}`);
           }
           
           // 處理兩種格式：
           // 1. 數組格式：[{...}, {...}]
           // 2. 對象格式：{importDate, source, questions: [...]}
           if (fileData) {
+            console.log(`📋 [QuizScreen] loadQuestions: 解析檔案資料`);
             const isArray = Array.isArray(fileData);
             const questionsArray = isArray ? fileData : (fileData.questions || []);
+            console.log(`📋 [QuizScreen] loadQuestions: isArray: ${isArray}, 題數: ${questionsArray.length}`);
             
             if (questionsArray.length > 0) {
               questionsData = questionsArray.map((q: any, index: number) => ({
@@ -102,6 +113,7 @@ const QuizScreen = () => {
                 exp: String(q.Exp || q.exp || q.explanation || ''),
                 questionNumber: index + 1,
               }));
+              console.log(`✅ [QuizScreen] loadQuestions: 標準化完成，題數: ${questionsData.length}`);
             }
           }
         }

@@ -83,6 +83,16 @@ export function parseSource(source: string): ParsedSource {
 }
 
 /**
+ * 移除問題開頭的編號（例如 "1. " 或 "2 "）
+ */
+function removeQuestionNumberPrefix(text: string): string {
+  if (!text) return text;
+  // 匹配開頭的編號格式：數字 + 可選的點 + 空格
+  // 例如："1. "、"2 "、"10. " 等
+  return text.replace(/^\d+\.?\s+/, '');
+}
+
+/**
  * 將匯入的題目格式標準化
  */
 function normalizeQuestion(
@@ -96,9 +106,13 @@ function normalizeQuestion(
     ? `${testName}_${subject}_${series_no}_${index + 1}`
     : `${testName}_${series_no}_${index + 1}`;
 
+  // 移除問題開頭的編號
+  const rawContent = String(q.Q || q.content || '');
+  const cleanedContent = removeQuestionNumberPrefix(rawContent);
+
   return {
     id: questionId,
-    content: String(q.Q || q.content || ''),
+    content: cleanedContent,
     A: String(q.A || q.options?.A || ''),
     B: String(q.B || q.options?.B || ''),
     C: String(q.C || q.options?.C || ''),

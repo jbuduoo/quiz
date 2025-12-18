@@ -50,6 +50,7 @@ export default function App() {
   const initializeApp = async () => {
     console.log('🚀 [App] initializeApp: 開始初始化應用程式');
     console.log('🚀 [App] initializeApp: 平台:', Platform.OS);
+    console.log('🚀 [App] initializeApp: 時間:', new Date().toISOString());
     
     // 設定一個絕對超時，確保無論如何都會停止載入動畫
     const absoluteTimeout = setTimeout(() => {
@@ -60,12 +61,14 @@ export default function App() {
     try {
       // 初始化資料（設定超時，避免無限等待）
       // QuestionService 會優先使用本地打包的 JSON 檔案，不需要網路連線
+      console.log('🔄 [App] initializeApp: 準備呼叫 QuestionService.initializeData()');
       const initPromise = QuestionService.initializeData();
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('初始化超時')), Platform.OS === 'android' ? 15000 : 10000)
       );
       
       console.log(`🔄 [App] initializeApp: 等待初始化完成（最多 ${Platform.OS === 'android' ? 15 : 10} 秒）`);
+      console.log('🔄 [App] initializeApp: 開始 Promise.race');
       await Promise.race([initPromise, timeoutPromise]);
       console.log('✅ [App] initializeApp: 初始化完成');
     } catch (error) {
@@ -73,6 +76,9 @@ export default function App() {
       if (error instanceof Error) {
         console.error('❌ [App] initializeApp: 錯誤詳情:', error.message);
         console.error('❌ [App] initializeApp: 錯誤堆疊:', error.stack);
+      } else {
+        console.error('❌ [App] initializeApp: 錯誤類型:', typeof error);
+        console.error('❌ [App] initializeApp: 錯誤內容:', error);
       }
       // 即使初始化失敗，也讓應用程式繼續運行
       // 用戶可能仍可以從 AsyncStorage 讀取已儲存的資料
