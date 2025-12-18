@@ -105,8 +105,8 @@ const SeriesListScreen = () => {
     };
     
     const handleButtonPress = async () => {
-      // 如果是重新測驗，先清空該期數的所有答題記錄
-      if (isCompleted) {
+      // 如果是「開始測驗」或「重新測驗」，先清空該期數的所有答題記錄
+      if (isCompleted || isNotStarted) {
         await QuestionService.clearSeriesAnswers(testName, subject || null, item.name);
         // 重新載入資料以更新顯示
         await loadData();

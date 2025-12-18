@@ -9,8 +9,8 @@ const DEFAULT_LOCAL_SERVER_PORT = 3000;
  */
 export function getDefaultLocalServerUrl(): string {
   if (Platform.OS === 'web') {
-    // Web 版本使用 localhost
-    return `http://localhost:${DEFAULT_LOCAL_SERVER_PORT}`;
+    // Web 版本使用題庫網站
+    return 'https://jbuduoo.github.io/ExamBank/';
   }
   
   // 手機版本需要區域網路 IP

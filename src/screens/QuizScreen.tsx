@@ -17,6 +17,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Question, UserAnswer } from '../types';
 import QuestionService from '../services/QuestionService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../../App';
 import RichTextWithImages from '../components/RichTextWithImages';
 import SearchQuestionModal from '../components/SearchQuestionModal';
@@ -30,7 +31,7 @@ type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
 const QuizScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<QuizRouteProp>();
-  const { testName, subject, series_no, isReviewMode } = route.params;
+  const { testName, subject, series_no, isReviewMode, directFileName } = route.params;
   const isReviewModeBool = Boolean(isReviewMode);
   const insets = useSafeAreaInsets();
   const { answerPageTextSizeValue } = useTheme();
@@ -64,11 +65,58 @@ const QuizScreen = () => {
 
   const loadQuestions = async () => {
     setLoading(true);
-    const questionsData = await QuestionService.getQuestionsByTestNameSubjectSeries(
-      testName,
-      subject || null, // 如果 subject 為空字串，轉換為 null
-      series_no
-    );
+    
+    let questionsData: Question[] = [];
+    
+    // 如果是直接載入的檔案，從 AsyncStorage 讀取
+    if (directFileName && testName === 'DIRECT_FILE') {
+      try {
+        const storedData = await AsyncStorage.getItem('@quiz:directQuestions');
+        if (storedData) {
+          questionsData = JSON.parse(storedData);
+        } else {
+          // 如果 AsyncStorage 沒有，直接載入檔案
+          // 所有平台都使用 require，讓 Metro bundler 打包檔案
+          let fileData: any;
+          
+          if (directFileName === 'IPAS_01_AI_126932-阿摩線上測驗.json') {
+            fileData = require('../../assets/data/questions/IPAS_01_AI_126932-阿摩線上測驗.json');
+          }
+          
+          // 處理兩種格式：
+          // 1. 數組格式：[{...}, {...}]
+          // 2. 對象格式：{importDate, source, questions: [...]}
+          if (fileData) {
+            const isArray = Array.isArray(fileData);
+            const questionsArray = isArray ? fileData : (fileData.questions || []);
+            
+            if (questionsArray.length > 0) {
+              questionsData = questionsArray.map((q: any, index: number) => ({
+                id: `${directFileName}_${index + 1}`,
+                content: String(q.Q || q.content || ''),
+                A: String(q.A || q.options?.A || ''),
+                B: String(q.B || q.options?.B || ''),
+                C: String(q.C || q.options?.C || ''),
+                D: String(q.D || q.options?.D || ''),
+                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
+                exp: String(q.Exp || q.exp || q.explanation || ''),
+                questionNumber: index + 1,
+              }));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('載入直接檔案失敗:', error);
+      }
+    } else {
+      // 使用原有的載入方式
+      questionsData = await QuestionService.getQuestionsByTestNameSubjectSeries(
+        testName,
+        subject || null,
+        series_no
+      );
+    }
+    
     setQuestions(questionsData);
     
     // 載入上次的進度，如果有的話
@@ -105,6 +153,7 @@ const QuizScreen = () => {
       setSelectedAnswer(null);
       setIsCorrect(false);
       setIsUncertain(false);
+      // 載入收藏狀態（如果之前收藏過）
       setIsFavorite(Boolean(answer?.isFavorite));
       
       // 檢視模式下，未答的題目也顯示結果（標示為未作答）
@@ -179,10 +228,7 @@ const QuizScreen = () => {
     if (!currentQuestion) return;
     
     try {
-      // 將題目加入錯題本
-      await QuestionService.updateUserAnswer(currentQuestion.id, {
-        isInWrongBook: true,
-      });
+      // 問題回報不會主動加入錯題本
       await loadUserAnswer();
       
       // 生成完整的實例編號
@@ -283,25 +329,93 @@ const QuizScreen = () => {
       await QuestionService.saveQuizProgress(testName, subject || null, series_no, newIndex);
       // 不重置狀態，讓 loadUserAnswer 來恢復狀態
     } else {
-      // 已經是最後一題，詢問是否結束測驗
-      if (typeof window !== 'undefined') {
-        // Web 平台
-        const confirmed = window.confirm('是否結束測驗？');
-        if (confirmed) {
-          await handleEndQuizConfirm();
-        }
-      } else {
-        // 原生平台
-        Alert.alert('確認', '是否結束測驗？', [
-          { text: '否', style: 'cancel' },
-          {
-            text: '是',
-            onPress: async () => {
+      // 已經是最後一題，檢查是否已答題
+      const currentQuestion = questions[currentIndex];
+      if (currentQuestion) {
+        const answers = await QuestionService.getUserAnswers();
+        const answer = answers[currentQuestion.id];
+        
+        // 如果最後一題已答題，直接顯示成績
+        if (answer?.isAnswered) {
+          await handleShowScore();
+        } else {
+          // 如果最後一題未答題，詢問是否結束測驗
+          if (typeof window !== 'undefined') {
+            // Web 平台
+            const confirmed = window.confirm('是否結束測驗？');
+            if (confirmed) {
               await handleEndQuizConfirm();
-            },
-          },
-        ]);
+            }
+          } else {
+            // 原生平台
+            Alert.alert('確認', '是否結束測驗？', [
+              { text: '否', style: 'cancel' },
+              {
+                text: '是',
+                onPress: async () => {
+                  await handleEndQuizConfirm();
+                },
+              },
+            ]);
+          }
+        }
       }
+    }
+  };
+
+  const handleShowScore = async () => {
+    // 計算成績
+    const userAnswers = await QuestionService.getUserAnswers();
+    let correctCount = 0;
+    let wrongCount = 0;
+    
+    questions.forEach(q => {
+      const answer = userAnswers[q.id];
+      if (answer?.isAnswered) {
+        if (answer.isCorrect) {
+          correctCount++;
+        } else {
+          wrongCount++;
+        }
+      }
+    });
+    
+    const totalAnswered = correctCount + wrongCount;
+    const score = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+    
+    // 顯示成績對話框
+    const scoreMessage = `成績\n\n答對：${correctCount}題\n答錯：${wrongCount}題\n總題數：${questions.length}題\n\n分數：${score}分`;
+    
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      window.alert(scoreMessage);
+      await QuestionService.updateProgress();
+      // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
+      if (directFileName) {
+        await QuestionService.clearFileAnswers(directFileName);
+      } else {
+        await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+      }
+      await QuestionService.updateProgress();
+      navigation.goBack();
+    } else {
+      // 原生平台
+      Alert.alert('成績', scoreMessage, [
+        {
+          text: '確定',
+          onPress: async () => {
+            await QuestionService.updateProgress();
+            // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
+            if (directFileName) {
+              await QuestionService.clearFileAnswers(directFileName);
+            } else {
+              await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+            }
+            await QuestionService.updateProgress();
+            navigation.goBack();
+          },
+        },
+      ]);
     }
   };
 
@@ -360,6 +474,13 @@ const QuizScreen = () => {
       await QuestionService.saveQuizScore(testName, subject || null, series_no, score);
       await QuestionService.updateProgress();
       await QuestionService.clearQuizProgress(testName, subject || null, series_no);
+      // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
+      if (directFileName) {
+        await QuestionService.clearFileAnswers(directFileName);
+      } else {
+        await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+      }
+      await QuestionService.updateProgress();
       navigation.goBack();
     } else {
       // 原生平台
@@ -370,6 +491,13 @@ const QuizScreen = () => {
             await QuestionService.saveQuizScore(testName, subject, series_no, score);
             await QuestionService.updateProgress();
             await QuestionService.clearQuizProgress(testName, subject, series_no);
+            // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
+            if (directFileName) {
+              await QuestionService.clearFileAnswers(directFileName);
+            } else {
+              await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+            }
+            await QuestionService.updateProgress();
             navigation.goBack();
           },
         },

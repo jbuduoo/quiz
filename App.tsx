@@ -13,17 +13,19 @@ import WrongBookScreen from './src/screens/WrongBookScreen';
 import ReviewQuizScreen from './src/screens/ReviewQuizScreen';
 import ImportWebViewScreen from './src/screens/ImportWebViewScreen';
 import ImportConfigScreen from './src/screens/ImportConfigScreen';
+import FileNameListScreen from './src/screens/FileNameListScreen';
 import { ImportedQuestionData } from './src/services/ImportService';
 
 export type RootStackParamList = {
+  FileNameList: undefined;
   TestNameList: undefined;
   SubjectList: { testName?: string };
   SeriesList: { testName: string; subject: string };
-  Quiz: { testName: string; subject: string; series_no: string; isReviewMode?: boolean };
+  Quiz: { testName: string; subject: string; series_no: string; isReviewMode?: boolean; directFileName?: string };
   WrongBook: undefined;
   ReviewQuiz: { questionId: string; questionIds: string[] };
   ImportWebView: { url?: string };
-  ImportConfig: { questionData: ImportedQuestionData; downloadUrl: string };
+  ImportConfig: { questionData?: ImportedQuestionData; downloadUrl?: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -115,11 +117,12 @@ export default function App() {
           >
             <NavigationContainer ref={navigationRef}>
               <Stack.Navigator
-                initialRouteName="SubjectList"
+                initialRouteName="FileNameList"
                 screenOptions={{
                   headerShown: false as boolean,
                 }}
               >
+                <Stack.Screen name="FileNameList" component={FileNameListScreen} />
                 <Stack.Screen name="TestNameList" component={TestNameListScreen} />
                 <Stack.Screen name="SubjectList" component={SubjectListScreen} />
                 <Stack.Screen name="SeriesList" component={SeriesListScreen} />

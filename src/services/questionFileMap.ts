@@ -3,41 +3,8 @@
 
 import { QuestionFileData } from './QuestionService';
 
+// 暫時清空映射表，因為檔案不存在
+// 現在使用 FileNameListScreen 直接讀取檔案的方式
 export const questionFileMap: Record<string, () => QuestionFileData> = {
-  'questions/AZ900/part1/20251216.json': () => require('../../assets/data/questions/AZ900/part1/20251216.json'),
-  'questions/AZ900/part1/2025121602.json': () => require('../../assets/data/questions/AZ900/part1/2025121602.json'),
-  'questions/IPAS_01/L11/11401.json': () => require('../../assets/data/questions/IPAS_01/L11/11401.json'),
-  'questions/IPAS_01/L11/11409.json': () => require('../../assets/data/questions/IPAS_01/L11/11409.json'),
-  'questions/IPAS_01/L11/11411.json': () => require('../../assets/data/questions/IPAS_01/L11/11411.json'),
-  'questions/IPAS_01/L11/126092.json': () => require('../../assets/data/questions/IPAS_01/L11/126092.json'),
-  'questions/IPAS_01/L11/126093.json': () => require('../../assets/data/questions/IPAS_01/L11/126093.json'),
-  'questions/IPAS_01/L11/126094.json': () => require('../../assets/data/questions/IPAS_01/L11/126094.json'),
-  'questions/IPAS_01/L11/126105.json': () => require('../../assets/data/questions/IPAS_01/L11/126105.json'),
-  'questions/IPAS_01/L11/126874.json': () => require('../../assets/data/questions/IPAS_01/L11/126874.json'),
-  'questions/IPAS_01/L11/126875.json': () => require('../../assets/data/questions/IPAS_01/L11/126875.json'),
-  'questions/IPAS_01/L11/126876.json': () => require('../../assets/data/questions/IPAS_01/L11/126876.json'),
-  'questions/IPAS_01/L11/126909.json': () => require('../../assets/data/questions/IPAS_01/L11/126909.json'),
-  'questions/IPAS_01/L11/126924.json': () => require('../../assets/data/questions/IPAS_01/L11/126924.json'),
-  'questions/IPAS_01/L11/126932.json': () => require('../../assets/data/questions/IPAS_01/L11/126932.json'),
-  'questions/IPAS_01/L11/126942.json': () => require('../../assets/data/questions/IPAS_01/L11/126942.json'),
-  'questions/IPAS_01/L11/127045.json': () => require('../../assets/data/questions/IPAS_01/L11/127045.json'),
-  'questions/IPAS_01/L11/127151.json': () => require('../../assets/data/questions/IPAS_01/L11/127151.json'),
-  'questions/IPAS_01/L11/128026.json': () => require('../../assets/data/questions/IPAS_01/L11/128026.json'),
-  'questions/IPAS_01/L11/130994.json': () => require('../../assets/data/questions/IPAS_01/L11/130994.json'),
-  'questions/IPAS_01/L11/133864.json': () => require('../../assets/data/questions/IPAS_01/L11/133864.json'),
-  'questions/IPAS_01/L12/11409.json': () => require('../../assets/data/questions/IPAS_01/L12/11409.json'),
-  'questions/IPAS_01/L12/11411.json': () => require('../../assets/data/questions/IPAS_01/L12/11411.json'),
-  'questions/IPAS_01/L12/126077.json': () => require('../../assets/data/questions/IPAS_01/L12/126077.json'),
-  'questions/IPAS_01/L12/126078.json': () => require('../../assets/data/questions/IPAS_01/L12/126078.json'),
-  'questions/IPAS_01/L12/126079.json': () => require('../../assets/data/questions/IPAS_01/L12/126079.json'),
-  'questions/IPAS_01/L12/126859.json': () => require('../../assets/data/questions/IPAS_01/L12/126859.json'),
-  'questions/IPAS_02/L21/11409.json': () => require('../../assets/data/questions/IPAS_02/L21/11409.json'),
-  'questions/IPAS_02/L21/11411.json': () => require('../../assets/data/questions/IPAS_02/L21/11411.json'),
-  'questions/IPAS_02/L22/11409.json': () => require('../../assets/data/questions/IPAS_02/L22/11409.json'),
-  'questions/IPAS_02/L22/11411.json': () => require('../../assets/data/questions/IPAS_02/L22/11411.json'),
-  'questions/IPAS_02/L23/11409.json': () => require('../../assets/data/questions/IPAS_02/L23/11409.json'),
-  'questions/IPAS_02/L23/11411.json': () => require('../../assets/data/questions/IPAS_02/L23/11411.json'),
-  'questions/JAVA/JAVA Basic/20251216.json': () => require('../../assets/data/questions/JAVA/JAVA Basic/20251216.json'),
-  'questions/JAVA/Spring boot/20251216.json': () => require('../../assets/data/questions/JAVA/Spring boot/20251216.json'),
-  'questions/JAVA/Spring boot/20251216_basic.json': () => require('../../assets/data/questions/JAVA/Spring boot/20251216_basic.json'),
+  // 檔案已移除，使用直接讀取方式
 };

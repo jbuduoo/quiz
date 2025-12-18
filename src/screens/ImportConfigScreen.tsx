@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,7 +18,6 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   ImportedQuestionData,
-  parseSource,
   importQuestionFile,
 } from '../services/ImportService';
 import QuestionService from '../services/QuestionService';
@@ -25,47 +25,146 @@ import QuestionService from '../services/QuestionService';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ImportConfigRouteProp = RNRouteProp<RootStackParamList, 'ImportConfig'>;
 
+// 從檔案名稱提取名稱（移除副檔名）
+const getFileNameFromUrl = (url: string): string => {
+  try {
+    // 如果是 URL，嘗試從路徑中提取檔名
+    if (url.includes('/')) {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const fileName = pathname.split('/').pop() || url;
+      return fileName.replace(/\.(json|xlsx|txt)$/i, '');
+    }
+    // 如果已經是檔名，直接移除副檔名
+    return url.replace(/\.(json|xlsx|txt)$/i, '');
+  } catch {
+    // 如果解析失敗，直接移除副檔名
+    return url.replace(/\.(json|xlsx|txt)$/i, '');
+  }
+};
+
 const ImportConfigScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ImportConfigRouteProp>();
-  const { questionData, downloadUrl } = route.params;
+  const { questionData: initialQuestionData, downloadUrl: initialDownloadUrl } = route.params || {};
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
-  // 從 source 自動解析
-  const parsedSource = questionData.source
-    ? parseSource(questionData.source)
-    : { testName: '', subject: null, series_no: '' };
+  // 使用狀態來管理 questionData 和 downloadUrl，以便本地匯入時更新
+  const [questionData, setQuestionData] = useState<ImportedQuestionData | undefined>(initialQuestionData);
+  const [downloadUrl, setDownloadUrl] = useState<string | undefined>(initialDownloadUrl);
 
-  const [testName, setTestName] = useState(parsedSource.testName);
-  const [subject, setSubject] = useState(parsedSource.subject || '');
-  const [seriesNo, setSeriesNo] = useState(parsedSource.series_no);
+  // 從 downloadUrl 提取檔案名稱
+  const fileName = downloadUrl ? getFileNameFromUrl(downloadUrl) : 'IMPORTED';
+
+  const [testName, setTestName] = useState(fileName);
+
+  // 當 downloadUrl 改變時，自動更新 testName
+  useEffect(() => {
+    if (downloadUrl) {
+      const extractedName = getFileNameFromUrl(downloadUrl);
+      setTestName(extractedName);
+    }
+  }, [downloadUrl]);
+
+  // 當初始參數改變時，更新狀態
+  useEffect(() => {
+    if (initialQuestionData) {
+      setQuestionData(initialQuestionData);
+    }
+    if (initialDownloadUrl) {
+      setDownloadUrl(initialDownloadUrl);
+    }
+  }, [initialQuestionData, initialDownloadUrl]);
+
   const [importing, setImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState(false);
 
-  const questionCount = questionData.questions?.length || 0;
+  const questionCount = questionData?.questions?.length || 0;
+  const hasValidQuestions = questionData && questionData.questions && questionData.questions.length > 0;
 
   // 預覽前 3 題
-  const previewQuestions = questionData.questions?.slice(0, 3) || [];
+  const previewQuestions = questionData?.questions?.slice(0, 3) || [];
+
+  // 處理本地匯入
+  const handleLocalImport = async () => {
+    if (Platform.OS === 'web') {
+      // Web 平台：使用 file input
+      if (typeof window !== 'undefined') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = async (e: any) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          try {
+            const text = await file.text();
+            let data = JSON.parse(text);
+            
+            // 處理兩種格式：
+            // 1. 數組格式：[{...}, {...}] -> 轉換為 ImportedQuestionData 格式
+            // 2. 對象格式：{importDate, source, questions: [...]}
+            if (Array.isArray(data)) {
+              data = {
+                source: file.name,
+                importDate: new Date().toISOString().split('T')[0],
+                questions: data,
+              } as ImportedQuestionData;
+            } else if (!data.questions) {
+              // 如果沒有 questions 欄位，假設整個物件就是題目數組
+              data = {
+                source: file.name,
+                importDate: new Date().toISOString().split('T')[0],
+                questions: Array.isArray(data) ? data : [],
+              } as ImportedQuestionData;
+            }
+            
+            // 確保有 source
+            if (!data.source) {
+              data.source = file.name;
+            }
+            
+            // 更新狀態
+            setQuestionData(data as ImportedQuestionData);
+            setDownloadUrl(file.name);
+          } catch (error) {
+            console.error('讀取檔案失敗:', error);
+            Alert.alert('錯誤', '無法讀取檔案，請確認檔案格式正確');
+          }
+        };
+        input.click();
+      }
+    } else {
+      // React Native 平台：顯示 URL 輸入 Modal
+      Alert.alert(
+        '提示',
+        'React Native 平台請使用 URL 匯入功能',
+        [{ text: '確定' }]
+      );
+    }
+  };
 
   const handleImport = async () => {
-    // 驗證輸入
-    if (!testName.trim()) {
-      Alert.alert('錯誤', '請輸入測驗名稱');
+    // 如果沒有題庫資料，提示用戶先選擇檔案
+    if (!hasValidQuestions) {
+      Alert.alert('錯誤', '請先選擇要匯入的題庫檔案');
       return;
     }
-    if (!seriesNo.trim()) {
-      Alert.alert('錯誤', '請輸入期數');
+    // 驗證輸入
+    if (!testName.trim()) {
+      Alert.alert('錯誤', '請輸入匯入名稱');
       return;
     }
 
     try {
       setImporting(true);
 
+      // 使用預設值：subject 為 null，series_no 使用時間戳
       await importQuestionFile(
         questionData,
         testName.trim(),
-        subject.trim() || null,
-        seriesNo.trim()
+        null,
+        Date.now().toString()
       );
 
       // 合併匯入索引
@@ -107,9 +206,11 @@ const ImportConfigScreen = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={[styles.backButtonText, { color: colors.headerText, fontSize: textSizeValue }]}>
-            ← 返回
-          </Text>
+          <Image
+            source={require('../../assets/back.png')}
+            style={styles.backButtonImage}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
         <Text
           style={[
@@ -117,7 +218,7 @@ const ImportConfigScreen = () => {
             { color: colors.headerText, fontSize: titleTextSizeValue },
           ]}
         >
-          匯入設定
+          匯入名稱
         </Text>
         <View style={styles.headerRight} />
       </View>
@@ -131,96 +232,78 @@ const ImportConfigScreen = () => {
           <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
             題庫資訊
           </Text>
-          {questionData.source && (
-            <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
-              來源：{questionData.source}
-            </Text>
-          )}
-          <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
-            題數：{questionCount} 題
-          </Text>
-          {questionData.importDate && (
-            <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
-              匯入日期：{questionData.importDate}
-            </Text>
+          {!hasValidQuestions ? (
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
+                尚未選擇題庫檔案
+              </Text>
+              <TouchableOpacity
+                style={[styles.selectFileButton, { backgroundColor: colors.primary }]}
+                onPress={handleLocalImport}
+              >
+                <Text style={[styles.selectFileButtonText, { fontSize: textSizeValue }]}>
+                  📁 選擇檔案
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {questionData.source && (
+                <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
+                  來源：{questionData.source}
+                </Text>
+              )}
+              <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
+                題數：{questionCount} 題
+              </Text>
+              {questionData.importDate && (
+                <Text style={[styles.infoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
+                  匯入日期：{questionData.importDate}
+                </Text>
+              )}
+              <TouchableOpacity
+                style={[styles.changeFileButton, { borderColor: colors.primary }]}
+                onPress={handleLocalImport}
+              >
+                <Text style={[styles.changeFileButtonText, { color: colors.primary, fontSize: textSizeValue }]}>
+                  📁 更換檔案
+                </Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
 
-        {/* 匯入設定 */}
+        {/* 匯入名稱 */}
         <View style={[styles.section, { backgroundColor: colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
-            匯入設定
+            匯入名稱
           </Text>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: colors.text, fontSize: textSizeValue }]}>
-              測驗名稱 *
+              匯入名稱 *
             </Text>
             <TextInput
               style={[
                 styles.input,
                 {
-                  backgroundColor: colors.background,
+                  backgroundColor: '#E3F2FD', // 淺藍色背景，提示可編輯
                   color: colors.text,
-                  borderColor: colors.border,
+                  borderColor: '#2196F3', // 藍色邊框，更明顯
+                  borderWidth: 2,
                   fontSize: textSizeValue,
                 },
               ]}
               value={testName}
               onChangeText={setTestName}
-              placeholder="例如：IPAS_02"
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text, fontSize: textSizeValue }]}>
-              科目（選填）
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.background,
-                  color: colors.text,
-                  borderColor: colors.border,
-                  fontSize: textSizeValue,
-                },
-              ]}
-              value={subject}
-              onChangeText={setSubject}
-              placeholder="例如：L21"
-              placeholderTextColor={colors.textSecondary}
-            />
-            <Text style={[styles.hint, { color: colors.textSecondary, fontSize: textSizeValue - 2 }]}>
-              如果沒有科目，請留空
-            </Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text, fontSize: textSizeValue }]}>
-              期數 *
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.background,
-                  color: colors.text,
-                  borderColor: colors.border,
-                  fontSize: textSizeValue,
-                },
-              ]}
-              value={seriesNo}
-              onChangeText={setSeriesNo}
-              placeholder="例如：11411"
+              placeholder="例如：IPAS_01_AI_126932-阿摩線上測驗"
               placeholderTextColor={colors.textSecondary}
             />
           </View>
         </View>
 
         {/* 題目預覽 */}
-        {previewQuestions.length > 0 && (
+        {questionData && previewQuestions.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.surface }]}>
             <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
               題目預覽（前 3 題）
@@ -231,11 +314,56 @@ const ImportConfigScreen = () => {
                   第 {index + 1} 題
                 </Text>
                 <Text
-                  style={[styles.previewQuestion, { color: colors.text, fontSize: textSizeValue }]}
-                  numberOfLines={2}
+                  style={[styles.previewQuestion, { color: colors.text, fontSize: textSizeValue, marginBottom: 8 }]}
                 >
                   {q.Q || q.content || '無題目內容'}
                 </Text>
+                {/* 顯示選項 */}
+                {q.A && (
+                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                    A. {q.A}
+                  </Text>
+                )}
+                {q.B && (
+                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                    B. {q.B}
+                  </Text>
+                )}
+                {q.C && (
+                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                    C. {q.C}
+                  </Text>
+                )}
+                {q.D && (
+                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                    D. {q.D}
+                  </Text>
+                )}
+                {/* 如果沒有 A, B, C, D，嘗試從 options 讀取 */}
+                {!q.A && q.options && (
+                  <>
+                    {q.options.A && (
+                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                        A. {q.options.A}
+                      </Text>
+                    )}
+                    {q.options.B && (
+                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                        B. {q.options.B}
+                      </Text>
+                    )}
+                    {q.options.C && (
+                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                        C. {q.options.C}
+                      </Text>
+                    )}
+                    {q.options.D && (
+                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                        D. {q.options.D}
+                      </Text>
+                    )}
+                  </>
+                )}
               </View>
             ))}
           </View>
@@ -255,7 +383,7 @@ const ImportConfigScreen = () => {
             },
           ]}
           onPress={handleImport}
-          disabled={importing || importSuccess}
+          disabled={importing || importSuccess || !hasValidQuestions}
         >
           {importing ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -288,9 +416,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  backButtonText: {
-    fontWeight: '600',
+  backButtonImage: {
+    width: 24,
+    height: 24,
   },
   headerTitle: {
     flex: 1,
@@ -356,6 +487,12 @@ const styles = StyleSheet.create({
   },
   previewQuestion: {
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  previewOption: {
+    lineHeight: 20,
+    marginTop: 4,
+    marginLeft: 8,
   },
   footer: {
     paddingHorizontal: 16,
@@ -370,6 +507,36 @@ const styles = StyleSheet.create({
   },
   importButtonText: {
     color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  emptyStateText: {
+    marginBottom: 16,
+  },
+  selectFileButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectFileButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  changeFileButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changeFileButtonText: {
     fontWeight: '600',
   },
 });

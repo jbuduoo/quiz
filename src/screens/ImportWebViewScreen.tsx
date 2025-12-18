@@ -10,13 +10,14 @@ import {
   Platform,
   TextInput,
   Modal,
+  Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { WebView } from 'react-native-webview';
 import { RootStackParamList } from '../../App';
 import { useTheme } from '../contexts/ThemeContext';
-import { downloadQuestionFile } from '../services/ImportService';
+import { downloadQuestionFile, ImportedQuestionData } from '../services/ImportService';
 import {
   getEffectiveServerUrl,
   saveServerUrl,
@@ -65,8 +66,8 @@ const ImportWebViewScreen = () => {
   // 自動檢測本地伺服器 IP（僅手機版本）
   const handleAutoDetectIP = async () => {
     if (Platform.OS === 'web') {
-      // Web 版本直接使用 localhost
-      const url = 'http://localhost:3000';
+      // Web 版本直接使用題庫網站
+      const url = 'https://jbuduoo.github.io/ExamBank/';
       setServerUrl(url);
       await saveServerUrl(url);
       setShowUrlInput(false);
@@ -178,6 +179,7 @@ const ImportWebViewScreen = () => {
   };
 
   // Web 平台：處理檔案選擇（當用戶從瀏覽器下載檔案後）
+  // 使用與本地匯入相同的邏輯
   const handleFileSelect = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const input = document.createElement('input');
@@ -190,10 +192,33 @@ const ImportWebViewScreen = () => {
         try {
           setLoading(true);
           const text = await file.text();
-          const data = JSON.parse(text);
+          let data = JSON.parse(text);
+          
+          // 處理兩種格式：
+          // 1. 數組格式：[{...}, {...}] -> 轉換為 ImportedQuestionData 格式
+          // 2. 對象格式：{importDate, source, questions: [...]}
+          if (Array.isArray(data)) {
+            data = {
+              source: file.name,
+              importDate: new Date().toISOString().split('T')[0],
+              questions: data,
+            } as ImportedQuestionData;
+          } else if (!data.questions) {
+            // 如果沒有 questions 欄位，假設整個物件就是題目數組
+            data = {
+              source: file.name,
+              importDate: new Date().toISOString().split('T')[0],
+              questions: Array.isArray(data) ? data : [],
+            } as ImportedQuestionData;
+          }
+          
+          // 確保有 source
+          if (!data.source) {
+            data.source = file.name;
+          }
           
           navigation.navigate('ImportConfig', {
-            questionData: data,
+            questionData: data as ImportedQuestionData,
             downloadUrl: file.name,
           });
         } catch (error) {
@@ -204,6 +229,13 @@ const ImportWebViewScreen = () => {
         }
       };
       input.click();
+    } else {
+      // React Native 平台：顯示提示
+      Alert.alert(
+        '提示',
+        'React Native 平台請使用 URL 匯入功能',
+        [{ text: '確定' }]
+      );
     }
   };
 
@@ -267,9 +299,11 @@ const ImportWebViewScreen = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={[styles.backButtonText, { color: colors.headerText, fontSize: textSizeValue }]}>
-            ← 返回
-          </Text>
+          <Image
+            source={require('../../assets/back.png')}
+            style={styles.backButtonImage}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
         <Text
           style={[
@@ -279,29 +313,25 @@ const ImportWebViewScreen = () => {
         >
           題庫網站
         </Text>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => setShowUrlInput(true)}
-        >
-          <Text style={[styles.settingsButtonText, { color: colors.headerText, fontSize: textSizeValue }]}>
-            ⚙️
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight} />
       </View>
 
       {serverUrl ? (
         Platform.OS === 'web' ? (
           // Web 平台：顯示提示和在新分頁打開的按鈕
           <View style={styles.webContainer}>
-            <View style={styles.webInfoContainer}>
-              <Text style={[styles.webInfoTitle, { color: colors.text, fontSize: titleTextSizeValue }]}>
-                📚 題庫網站
+            <View style={styles.webInstructions}>
+              <Text style={[styles.webInstructionsTitle, { color: colors.text, fontSize: textSizeValue }]}>
+                匯入方法
               </Text>
-              <Text style={[styles.webInfoText, { color: colors.textSecondary, fontSize: textSizeValue }]}>
-                點擊下方按鈕在新分頁中打開題庫網站
-              </Text>
-              <Text style={[styles.webInfoUrl, { color: colors.primary, fontSize: textSizeValue - 2 }]}>
-                {serverUrl}
+              <Text style={[styles.webInstructionsText, { color: colors.textSecondary, fontSize: textSizeValue - 2 }]}>
+                方法一：{'\n'}
+                1. 點擊「在新分頁打開」按鈕{'\n'}
+                2. 在新分頁中選擇要下載的題庫{'\n'}
+                3. 點擊「📥 下載題庫」按鈕下載 JSON 檔案{'\n'}
+                4. 下載完成後，點擊「📁 選擇已下載的檔案」選擇檔案匯入{'\n\n'}
+                方法二：{'\n'}
+                如果您已經下載了題庫 JSON 檔案，可以直接點擊「📁 選擇已下載的檔案」選擇檔案匯入
               </Text>
             </View>
             
@@ -327,21 +357,6 @@ const ImportWebViewScreen = () => {
                   📁 選擇已下載的檔案
                 </Text>
               </TouchableOpacity>
-            </View>
-            
-            <View style={styles.webInstructions}>
-              <Text style={[styles.webInstructionsTitle, { color: colors.text, fontSize: textSizeValue }]}>
-                使用說明：
-              </Text>
-              <Text style={[styles.webInstructionsText, { color: colors.textSecondary, fontSize: textSizeValue - 2 }]}>
-                方法一：{'\n'}
-                1. 點擊「在新分頁打開」按鈕{'\n'}
-                2. 在新分頁中選擇要下載的題庫{'\n'}
-                3. 點擊「📥 下載題庫」按鈕下載 JSON 檔案{'\n'}
-                4. 下載完成後，點擊「📁 選擇已下載的檔案」選擇檔案匯入{'\n\n'}
-                方法二：{'\n'}
-                如果您已經下載了題庫 JSON 檔案，可以直接點擊「📁 選擇已下載的檔案」選擇檔案匯入
-              </Text>
             </View>
           </View>
         ) : (
@@ -394,8 +409,10 @@ const ImportWebViewScreen = () => {
           onPress={() => setShowUrlInput(false)}
           {...(Platform.OS === 'web' ? {
             // Web 平台：防止背景層獲得焦點
+            // 移除 aria-hidden，改用 inert 屬性（如果支援）或僅使用 accessibilityRole
             accessibilityRole: 'none',
-            'aria-hidden': 'true',
+            // 注意：不要在有焦點元素的祖先上使用 aria-hidden
+            // 改用 CSS pointer-events 和適當的無障礙屬性
           } : {})}
         >
           <TouchableOpacity
@@ -434,7 +451,7 @@ const ImportWebViewScreen = () => {
               ]}
               value={urlInput}
               onChangeText={setUrlInput}
-              placeholder="http://localhost:3000"
+              placeholder="https://jbuduoo.github.io/ExamBank/"
               placeholderTextColor={colors.textSecondary}
               autoCapitalize="none"
               autoCorrect={false}
@@ -520,9 +537,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  backButtonText: {
-    fontWeight: '600',
+  backButtonImage: {
+    width: 24,
+    height: 24,
   },
   headerTitle: {
     flex: 1,
@@ -627,7 +647,6 @@ const styles = StyleSheet.create({
   webContainer: {
     flex: 1,
     padding: 24,
-    justifyContent: 'center',
   },
   webInfoContainer: {
     alignItems: 'center',
@@ -649,7 +668,6 @@ const styles = StyleSheet.create({
   },
   webButtons: {
     gap: 12,
-    marginBottom: 32,
   },
   webButton: {
     paddingVertical: 16,
@@ -673,6 +691,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
     borderRadius: 8,
     padding: 16,
+    marginBottom: 32,
   },
   webInstructionsTitle: {
     fontWeight: '600',

@@ -276,10 +276,10 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
       }
     }
     
-    console.error(`無法載入題目檔案: ${filePath}`);
+    console.warn(`⚠️ 無法載入題目檔案: ${filePath} (檔案不存在)`);
     return [];
   } catch (error) {
-    console.error(`載入題目檔案失敗 ${filePath}:`, error);
+    console.warn(`⚠️ 載入題目檔案失敗 ${filePath}:`, error);
     // 確保錯誤不會導致應用程式崩潰
     if (error instanceof Error) {
       console.error(`錯誤詳情: ${error.message}`);
@@ -540,35 +540,10 @@ class QuestionService {
         questionId,
       };
 
-      // 如果答錯，更新錯誤次數並自動加入錯題本
-      if (answer.isCorrect === false) {
-        // 如果是第一次答錯，增加錯誤次數
-        if (existingAnswer.isAnswered && existingAnswer.isCorrect !== false) {
-          updatedAnswer.wrongCount = existingAnswer.wrongCount + 1;
-        } else if (!existingAnswer.isAnswered) {
-          // 第一次答題就答錯
-          updatedAnswer.wrongCount = 1;
-        }
-        updatedAnswer.lastWrongAt = new Date();
-        // 答錯時自動加入錯題本
-        updatedAnswer.isInWrongBook = true;
-      }
-
-      // 如果答對，更新答題時間
-      if (answer.isCorrect === true) {
-        updatedAnswer.lastAnsweredAt = new Date();
-        // 答對時，如果沒有收藏，則從錯題本移除
-        // 如果已收藏，則保留在錯題本中
-        if (!updatedAnswer.isFavorite) {
-          updatedAnswer.isInWrongBook = false;
-        }
-      }
-
-      // 根據收藏狀態同步錯題本狀態
-      // 已收藏 → 加入錯題本（不管答對還是答錯）
-      if (updatedAnswer.isFavorite) {
-        updatedAnswer.isInWrongBook = true;
-      }
+      // 錯題本邏輯：錯題本和我的最愛是同一件事
+      // 按下最愛 → 加入錯題本
+      // 取消最愛 → 移除錯題本
+      updatedAnswer.isInWrongBook = updatedAnswer.isFavorite;
 
       userAnswers[questionId] = updatedAnswer;
       await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
@@ -1267,6 +1242,76 @@ class QuestionService {
       await this.updateProgress();
     } catch (error) {
       console.error('清空期數答題記錄失敗:', error);
+    }
+  }
+
+  // 清空指定檔案的所有答題記錄（用於直接檔案）
+  async clearFileAnswers(fileName: string): Promise<void> {
+    try {
+      const userAnswers = await this.getUserAnswers();
+      
+      // 找出所有以該檔案名稱開頭的題目 ID
+      const questionIds = Object.keys(userAnswers).filter(id => id.startsWith(`${fileName}_`));
+      
+      // 清空這些題目的答題記錄（保留收藏狀態）
+      questionIds.forEach(questionId => {
+        const existingAnswer = userAnswers[questionId];
+        if (existingAnswer) {
+          userAnswers[questionId] = {
+            questionId,
+            isCorrect: false,
+            isAnswered: false,
+            selectedAnswer: undefined,
+            isFavorite: Boolean(existingAnswer.isFavorite), // 保留收藏狀態
+            isInWrongBook: false, // 清空錯題本標記
+            isUncertain: false, // 清空不確定標記
+            wrongCount: 0, // 重置錯誤次數
+          };
+        }
+      });
+      
+      await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
+      
+      // 清除該檔案的測驗進度
+      await this.clearQuizProgress('DIRECT_FILE', null, fileName);
+      
+      console.log(`✅ 已清空檔案 ${fileName} 的答題記錄`);
+    } catch (error) {
+      console.error('清空檔案答題記錄失敗:', error);
+    }
+  }
+
+  // 清空錯題本中所有題目的答題記錄（用於錯題本重新測驗）
+  async clearWrongBookAnswers(): Promise<void> {
+    try {
+      const wrongBookQuestions = await this.getWrongBookQuestions();
+      const userAnswers = await this.getUserAnswers();
+      
+      // 清空錯題本中所有題目的答題記錄（保留收藏狀態）
+      wrongBookQuestions.forEach(question => {
+        if (userAnswers[question.id]) {
+          const existingAnswer = userAnswers[question.id];
+          userAnswers[question.id] = {
+            questionId: question.id,
+            isCorrect: false,
+            isAnswered: false,
+            selectedAnswer: undefined,
+            isFavorite: Boolean(existingAnswer.isFavorite), // 保留收藏狀態
+            isInWrongBook: false, // 清空錯題本標記
+            isUncertain: false, // 清空不確定標記
+            wrongCount: 0, // 重置錯誤次數
+          };
+        }
+      });
+      
+      await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
+      
+      // 更新進度統計
+      await this.updateProgress();
+      
+      console.log(`✅ 已清空錯題本的答題記錄`);
+    } catch (error) {
+      console.error('清空錯題本答題記錄失敗:', error);
     }
   }
 

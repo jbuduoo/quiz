@@ -13,5 +13,11 @@ if (!config.resolver.sourceExts.includes('json')) {
   config.resolver.sourceExts.push('json');
 }
 
+// 在 Web 平台，確保 JSON 檔案可以通過 fetch 載入
+// 將 JSON 從 assetExts 中移除（如果存在），讓它們可以作為模組載入
+if (config.resolver.assetExts && config.resolver.assetExts.includes('json')) {
+  config.resolver.assetExts = config.resolver.assetExts.filter(ext => ext !== 'json');
+}
+
 module.exports = config;
 
