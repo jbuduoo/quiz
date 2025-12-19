@@ -58,15 +58,18 @@
 - 題目去重：即使同一題目被標記多次，在錯題本中只顯示一次
 
 ### 📑 章節列表頁 (ChapterListScreen)
-- 顯示所有章節及其完成百分比
-- 底部整合「❤️ 錯題與收藏本」入口
-- 點擊章節可進入測驗（功能待完善）
+- ~~顯示所有章節及其完成百分比~~（已移除，功能未啟用）
+- ~~底部整合「❤️ 錯題與收藏本」入口~~（已移除）
+- ~~點擊章節可進入測驗（功能待完善）~~（已移除）
 
 ## 技術架構
 
+詳細的架構說明請參考：[網站架構說明](./docs/網站架構說明.md)
+
+**核心技術棧**：
 - **框架**：React Native + Expo (~54.0.27)
 - **導航**：React Navigation (Native Stack)
-- **資料儲存**：AsyncStorage
+- **資料儲存**：AsyncStorage（行動裝置）/ LocalStorage（Web）
 - **語言**：TypeScript
 - **題目資料格式**：JSON 檔案（按需載入）
 - **資料轉換工具**：Excel 轉 JSON 腳本
@@ -160,40 +163,14 @@ Web 版本已完全支援，可以在任何現代瀏覽器中運行：
 
 ## 專案結構
 
-```
-quiz/
-├── src/
-│   ├── screens/                    # 畫面元件
-│   │   ├── TestNameListScreen.tsx   # 測驗名稱列表頁
-│   │   ├── SubjectListScreen.tsx    # 科目列表頁
-│   │   ├── SeriesListScreen.tsx     # 期數列表頁
-│   │   ├── ChapterListScreen.tsx    # 章節列表頁
-│   │   ├── QuizScreen.tsx           # 作答頁
-│   │   ├── WrongBookScreen.tsx      # 錯題本頁
-│   │   └── ReviewQuizScreen.tsx     # 複習作答頁
-│   ├── services/                    # 服務層
-│   │   ├── QuestionService.ts       # 題目與答題記錄管理
-│   │   └── questionFileMap.ts       # 題目檔案映射表
-│   └── types/                       # 類型定義
-│       └── index.ts                 # TypeScript 介面定義
-├── assets/
-│   └── data/
-│       ├── questions.json           # 題目索引檔案
-│       └── questions/               # 題目 JSON 檔案目錄
-│           ├── q_*.json             # 各期數的題目檔案
-├── data/                            # 原始 Excel 資料
-│   └── *.xlsx                       # Excel 題目檔案
-├── scripts/                         # 資料轉換腳本
-│   ├── convertExcelToJSON.ts       # Excel 轉 JSON
-│   ├── convertExcelToJSON.js        # Excel 轉 JSON (JS 版本)
-│   ├── convertExcelToCSV.ts        # Excel 轉 CSV
-│   ├── generateQuestionFileMap.js   # 生成題目檔案映射表
-│   └── listTestNames.js             # 列出測驗名稱
-├── App.tsx                         # 應用程式入口與導航設定
-├── metro.config.js                 # Metro Bundler 配置
-├── package.json                    # 專案依賴
-└── README.md                       # 專案說明文件
-```
+詳細的專案結構說明請參考：[網站架構說明](./docs/網站架構說明.md#專案結構) 或 [專案結構與路徑說明](./docs/專案結構與路徑說明.md)
+
+**主要目錄**：
+- `src/` - 原始碼目錄（screens、services、components 等）
+- `assets/` - 靜態資源（data、images、config）
+- `scripts/` - 腳本工具（資料處理、Git 相關）
+- `docs/` - 文檔目錄
+- `tests/` - 測試目錄
 
 ## 核心功能流程
 
@@ -365,6 +342,7 @@ node scripts/validatePaths.js
 專案包含完整的文檔說明：
 
 - [README.md](./README.md) - 專案主要說明文件
+- [網站架構說明](./docs/網站架構說明.md) - 完整的系統架構說明（技術架構、專案結構、資料架構等）
 - [專案結構與路徑說明](./docs/專案結構與路徑說明.md) - 詳細的路徑結構和引用說明
 - [檔案功能說明](./docs/檔案功能說明.md) - 各檔案和腳本的功能說明
 - [題庫配置使用指南](./docs/題庫配置使用指南.md) - 題庫配置檔案的使用方法

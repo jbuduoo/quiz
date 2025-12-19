@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVER_URL_KEY = '@quiz:serverUrl';
-const DEFAULT_LOCAL_SERVER_PORT = 3000;
 
 /**
  * 取得預設的本地伺服器 URL
@@ -66,7 +65,7 @@ export async function getEffectiveServerUrl(): Promise<string> {
 }
 
 /**
- * 檢測本地伺服器是否可用
+ * 檢測伺服器是否可用
  */
 export async function checkServerAvailable(url: string): Promise<boolean> {
   try {
@@ -80,38 +79,5 @@ export async function checkServerAvailable(url: string): Promise<boolean> {
   }
 }
 
-/**
- * 嘗試常見的本地 IP 地址
- */
-export async function findLocalServerIP(): Promise<string | null> {
-  // 常見的本地 IP 網段
-  const commonIPRanges = [
-    '192.168.1',
-    '192.168.0',
-    '192.168.2',
-    '10.0.0',
-    '172.16.0',
-  ];
-  
-  const port = DEFAULT_LOCAL_SERVER_PORT;
-  
-  // 嘗試每個網段的常見 IP（1-10）
-  for (const range of commonIPRanges) {
-    for (let i = 1; i <= 10; i++) {
-      const ip = `${range}.${i}`;
-      const url = `http://${ip}:${port}`;
-      
-      try {
-        const available = await checkServerAvailable(url);
-        if (available) {
-          return url;
-        }
-      } catch (error) {
-        // 繼續嘗試下一個
-      }
-    }
-  }
-  
-  return null;
-}
+
 

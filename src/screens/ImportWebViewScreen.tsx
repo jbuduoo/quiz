@@ -21,7 +21,6 @@ import { downloadQuestionFile, ImportedQuestionData } from '../services/ImportSe
 import {
   getEffectiveServerUrl,
   saveServerUrl,
-  findLocalServerIP,
   checkServerAvailable,
 } from '../services/QuizServerService';
 
@@ -63,37 +62,15 @@ const ImportWebViewScreen = () => {
     }
   };
 
-  // 自動檢測本地伺服器 IP（僅手機版本）
+  // 自動設定預設伺服器 URL
   const handleAutoDetectIP = async () => {
-    if (Platform.OS === 'web') {
-      // Web 版本直接使用題庫網站
-      const url = 'https://jbuduoo.github.io/ExamBank/';
-      setServerUrl(url);
-      await saveServerUrl(url);
-      setShowUrlInput(false);
-      return;
-    }
-
-    setDetectingIP(true);
-    try {
-      const detectedUrl = await findLocalServerIP();
-      if (detectedUrl) {
-        setServerUrl(detectedUrl);
-        setUrlInput(detectedUrl);
-        await saveServerUrl(detectedUrl);
-        Alert.alert('成功', `已找到本地伺服器：${detectedUrl}`);
-        setShowUrlInput(false);
-      } else {
-        Alert.alert(
-          '未找到',
-          '無法自動檢測到本地伺服器。\n\n請確認：\n1. 已啟動本地伺服器（npm run quiz-server）\n2. 手機和電腦在同一 Wi-Fi 網路\n3. 手動輸入電腦的 IP 位址'
-        );
-      }
-    } catch (error) {
-      Alert.alert('錯誤', '檢測本地伺服器時發生錯誤');
-    } finally {
-      setDetectingIP(false);
-    }
+    // 所有平台都使用預設的題庫網站
+    const url = 'https://jbuduoo.github.io/ExamBank/';
+    setServerUrl(url);
+    setUrlInput(url);
+    await saveServerUrl(url);
+    setShowUrlInput(false);
+    Alert.alert('成功', '已設定預設題庫網站');
   };
 
   // 手動設定伺服器 URL
@@ -447,7 +424,7 @@ const ImportWebViewScreen = () => {
             </Text>
             
             <Text style={[styles.modalHint, { color: colors.textSecondary, fontSize: textSizeValue }]}>
-              輸入本地伺服器網址（例如：http://192.168.1.100:3000）
+              輸入題庫網站網址（例如：https://jbuduoo.github.io/ExamBank/）
             </Text>
             
             <TextInput

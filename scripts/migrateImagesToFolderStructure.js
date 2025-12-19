@@ -91,3 +91,4 @@ console.log(`   ✅ 成功: ${migratedCount} 個圖片檔案`);
 console.log(`   ❌ 失敗: ${errorCount} 個資料夾`);
 console.log(`\n💡 提示: 舊資料夾仍保留在原位置，確認無誤後可手動刪除`);
 
+

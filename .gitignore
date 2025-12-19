@@ -1,47 +1,10 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# Playwright
+/playwright/.cache/
 
-# dependencies
-node_modules/
+# 測試報告（統一放在 reports/ 目錄）
+/reports/
+/test-results/
+/playwright-report/
 
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env*.local
-.env
-.env.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
-
-# data/questions directory (created to prevent Metro scanning errors)
-/data/questions/*
-!/data/questions/.gitkeep
+# 備份檔案（通常不需要提交）
+/backup/
