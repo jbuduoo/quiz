@@ -5,26 +5,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, StyleSheet, Platform, Text } from 'react-native';
 import QuestionService from './src/services/QuestionService';
 import { ThemeProvider } from './src/contexts/ThemeContext';
-import TestNameListScreen from './src/screens/TestNameListScreen';
-import SubjectListScreen from './src/screens/SubjectListScreen';
-import SeriesListScreen from './src/screens/SeriesListScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import WrongBookScreen from './src/screens/WrongBookScreen';
 import ReviewQuizScreen from './src/screens/ReviewQuizScreen';
-import ImportWebViewScreen from './src/screens/ImportWebViewScreen';
 import ImportConfigScreen from './src/screens/ImportConfigScreen';
 import FileNameListScreen from './src/screens/FileNameListScreen';
 import { ImportedQuestionData } from './src/services/ImportService';
+import { Question } from './src/types';
 
 export type RootStackParamList = {
   FileNameList: undefined;
-  TestNameList: undefined;
-  SubjectList: { testName?: string };
-  SeriesList: { testName: string; subject: string };
   Quiz: { testName: string; subject: string; series_no: string; isReviewMode?: boolean; directFileName?: string };
   WrongBook: undefined;
-  ReviewQuiz: { questionId: string; questionIds: string[] };
-  ImportWebView: { url?: string };
+  ReviewQuiz: { questionId: string; questionIds: string[]; questions?: Question[] };
   ImportConfig: { questionData?: ImportedQuestionData; downloadUrl?: string };
 };
 
@@ -129,13 +122,9 @@ export default function App() {
                 }}
               >
                 <Stack.Screen name="FileNameList" component={FileNameListScreen} />
-                <Stack.Screen name="TestNameList" component={TestNameListScreen} />
-                <Stack.Screen name="SubjectList" component={SubjectListScreen} />
-                <Stack.Screen name="SeriesList" component={SeriesListScreen} />
                 <Stack.Screen name="Quiz" component={QuizScreen} />
                 <Stack.Screen name="WrongBook" component={WrongBookScreen} />
                 <Stack.Screen name="ReviewQuiz" component={ReviewQuizScreen} />
-                <Stack.Screen name="ImportWebView" component={ImportWebViewScreen} />
                 <Stack.Screen name="ImportConfig" component={ImportConfigScreen} />
               </Stack.Navigator>
             </NavigationContainer>

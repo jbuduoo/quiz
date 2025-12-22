@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -137,9 +138,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                     backgroundColor: colors.primary,
                   },
                 ]}
-                onPress={() => {
+                onPress={async () => {
                   onClose();
-                  navigation.navigate('ImportWebView');
+                  const url = 'https://drive.google.com/drive/folders/1uL6STVwEhZwdxNJCshQDz0dBj6MSsZEF?usp=sharing';
+                  
+                  try {
+                    if (Platform.OS === 'web') {
+                      // Web 平台：在新分頁打開
+                      if (typeof window !== 'undefined') {
+                        window.open(url, '_blank');
+                      }
+                    } else {
+                      // 原生平台：使用 Linking 打開瀏覽器
+                      const canOpen = await Linking.canOpenURL(url);
+                      if (canOpen) {
+                        await Linking.openURL(url);
+                      } else {
+                        Alert.alert('錯誤', '無法開啟瀏覽器');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('開啟網頁失敗:', error);
+                    Alert.alert('錯誤', '無法開啟網頁，請稍後再試');
+                  }
                 }}
               >
                 <Text

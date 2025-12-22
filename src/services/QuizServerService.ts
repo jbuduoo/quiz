@@ -8,7 +8,7 @@ const SERVER_URL_KEY = '@quiz:serverUrl';
  */
 export function getDefaultLocalServerUrl(): string {
   // 所有平台都使用相同的題庫網站，與 Web 版相同
-  return 'https://jbuduoo.github.io/ExamBank/';
+  return 'https://drive.google.com/drive/folders/1uL6STVwEhZwdxNJCshQDz0dBj6MSsZEF?usp=sharing';
 }
 
 /**

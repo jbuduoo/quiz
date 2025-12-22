@@ -37,6 +37,7 @@ class QuizLibraryConfigService {
   private config: QuizLibraryConfig[] = [];
   private lastFetchTime: number = 0;
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5分鐘快取
+  private configFileExists: boolean | null = null; // null: 未檢查, true: 存在, false: 不存在
 
   /**
    * 載入配置（優先從遠端，失敗則使用本地）
@@ -46,21 +47,39 @@ class QuizLibraryConfigService {
       // 嘗試從遠端載入（僅在 Web 平台）
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const now = Date.now();
-        // 減少快取時間或強制重新載入（開發時可以設為 0 或更短）
-        if (now - this.lastFetchTime > this.CACHE_DURATION || this.config.length === 0) {
+        // 如果之前確認配置文件不存在，直接跳過遠端載入
+        if (this.configFileExists === false) {
+          // 配置文件不存在，直接使用本地配置
+        } else if (now - this.lastFetchTime > this.CACHE_DURATION || this.config.length === 0) {
           try {
-            // 添加時間戳避免瀏覽器快取
-            const response = await fetch(`${REMOTE_CONFIG_URL}?t=${now}`);
+            // 嘗試載入遠端配置
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超時
+            
+            const response = await fetch(`${REMOTE_CONFIG_URL}?t=${now}`, {
+              signal: controller.signal,
+            });
+            
+            clearTimeout(timeoutId);
+            
             if (response.ok) {
               const remoteConfig = await response.json();
               this.config = remoteConfig;
               await this.saveConfig(remoteConfig);
               this.lastFetchTime = now;
+              this.configFileExists = true;
               console.log('✅ 從遠端載入題庫配置', remoteConfig);
               return this.config;
+            } else if (response.status === 404) {
+              // 配置文件不存在，記錄狀態，避免重複請求
+              this.configFileExists = false;
             }
-          } catch (error) {
-            console.warn('⚠️ 無法從遠端載入配置，使用本地配置:', error);
+          } catch (error: any) {
+            // 網絡錯誤、超時或其他錯誤，靜默處理
+            // 如果是 404 或超時，記錄狀態
+            if (error?.name === 'AbortError' || error?.message?.includes('404') || error?.name === 'TypeError') {
+              this.configFileExists = false;
+            }
           }
         } else {
           // 使用快取的配置
@@ -143,6 +162,7 @@ class QuizLibraryConfigService {
   clearCache(): void {
     this.lastFetchTime = 0;
     this.config = [];
+    this.configFileExists = null; // 重置文件存在狀態，下次會重新檢查
   }
 }
 

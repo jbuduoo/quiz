@@ -88,11 +88,13 @@ async function loadIndexData(): Promise<IndexData | null> {
     }
     
     // 在 Web 平台，使用 fetch
+    // 注意：Metro bundler 會自動移除 /assets/ 前綴，所以我們需要使用 assets/ 開頭的路徑
+    // 這樣 Metro 移除 /assets/ 後，就會在專案根目錄查找 assets/data/questions.json
     if (typeof window !== 'undefined') {
       console.log('📂 [loadIndexData] 在 Web 平台，嘗試使用 fetch 載入索引');
       try {
-        console.log('📂 [loadIndexData] 執行 fetch("/assets/data/questions.json")');
-        const response = await fetch('/assets/data/questions.json');
+        console.log('📂 [loadIndexData] 執行 fetch("/assets/assets/data/questions.json")');
+        const response = await fetch('/assets/assets/data/questions.json');
         console.log('📂 [loadIndexData] fetch 回應:', {
           ok: response.ok,
           status: response.status,
@@ -244,6 +246,14 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
             const rawContent = String(q.Q || q.content || '');
             const cleanedContent = removeQuestionNumberPrefix(rawContent);
             
+            // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+            // 與 ImportService.ts 和 Web fetch 載入的邏輯保持一致
+            const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+              ? String(q.E) 
+              : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+                ? String(q.options.E)
+                : undefined;
+            
             const normalizedQuestion: Question = {
               id: questionId,
               content: cleanedContent,
@@ -251,7 +261,8 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
               B: String(q.B || q.options?.B || ''),
               C: String(q.C || q.options?.C || ''),
               D: String(q.D || q.options?.D || ''),
-              Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
+              E: EValue,  // 處理 E 選項（用於複選題）
+              Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
               exp: String(q.Exp || q.exp || q.explanation || ''),
               questionNumber: index + 1,
               // 從路徑或 metadata 補充可選欄位
@@ -317,7 +328,12 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
                 B: String(q.B || q.options?.B || ''),
                 C: String(q.C || q.options?.C || ''),
                 D: String(q.D || q.options?.D || ''),
-                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
+                E: (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+                  ? String(q.E) 
+                  : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+                    ? String(q.options.E)
+                    : undefined,
+                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
                 exp: String(q.Exp || q.exp || q.explanation || ''),
                 questionNumber: index + 1,
                 testName: finalTestName,
@@ -1342,16 +1358,66 @@ class QuestionService {
   // 清空指定檔案的所有答題記錄（用於直接檔案）
   async clearFileAnswers(fileName: string): Promise<void> {
     try {
-      const userAnswers = await this.getUserAnswers();
+      console.log(`🔄 [QuestionService] clearFileAnswers: 開始清空檔案答題記錄`, { fileName });
       
-      // 找出所有以該檔案名稱開頭的題目 ID
-      const questionIds = Object.keys(userAnswers).filter(id => id.startsWith(`${fileName}_`));
+      const userAnswers = await this.getUserAnswers();
+      console.log(`📋 [QuestionService] clearFileAnswers: 當前總答題記錄數`, {
+        totalAnswers: Object.keys(userAnswers).length,
+      });
+      
+      // 對於匯入的檔案（以 questions/ 開頭），需要載入題目來獲取實際的題目 ID
+      let questionIds: string[] = [];
+      
+      if (fileName.startsWith('questions/')) {
+        // 匯入的檔案：載入題目以獲取實際的題目 ID
+        console.log(`📂 [QuestionService] clearFileAnswers: 匯入檔案，載入題目以獲取 ID`);
+        const { loadImportedQuestionFile } = await import('./ImportService');
+        const questions = await loadImportedQuestionFile(fileName);
+        questionIds = questions.map(q => q.id);
+        console.log(`📋 [QuestionService] clearFileAnswers: 從題目載入的 ID`, {
+          questionCount: questions.length,
+          questionIds: questionIds.slice(0, 5),
+          allQuestionIds: questionIds,
+        });
+        
+        // 檢查這些 ID 是否在用戶答案中存在
+        const existingQuestionIds = questionIds.filter(id => userAnswers[id]);
+        console.log(`🔍 [QuestionService] clearFileAnswers: 檢查題目 ID 是否存在於用戶答案中`, {
+          totalQuestionIds: questionIds.length,
+          existingQuestionIds: existingQuestionIds.length,
+          existingIds: existingQuestionIds.slice(0, 5),
+          allUserAnswerKeys: Object.keys(userAnswers).slice(0, 10),
+        });
+        
+        // 使用存在的題目 ID
+        questionIds = existingQuestionIds;
+      } else {
+        // 本地打包的檔案：使用檔案名稱匹配
+        questionIds = Object.keys(userAnswers).filter(id => id.startsWith(`${fileName}_`));
+        console.log(`🔍 [QuestionService] clearFileAnswers: 本地檔案，使用檔案名稱匹配`, {
+          fileName,
+          questionIdsCount: questionIds.length,
+          questionIds: questionIds.slice(0, 5),
+        });
+      }
+      
+      console.log(`🔍 [QuestionService] clearFileAnswers: 找到相關題目`, {
+        fileName,
+        questionIdsCount: questionIds.length,
+        questionIds: questionIds.slice(0, 5), // 只顯示前5個
+      });
+      
+      let clearedCount = 0;
+      let favoritePreservedCount = 0;
       
       // 清空這些題目的答題記錄（保留收藏狀態）
       questionIds.forEach(questionId => {
         const existingAnswer = userAnswers[questionId];
         if (existingAnswer) {
           const isFavorite = Boolean(existingAnswer.isFavorite);
+          const wasAnswered = existingAnswer.isAnswered;
+          const wasCorrect = existingAnswer.isCorrect;
+          
           userAnswers[questionId] = {
             questionId,
             isCorrect: false,
@@ -1362,17 +1428,52 @@ class QuestionService {
             isUncertain: false, // 清空不確定標記
             wrongCount: 0, // 重置錯誤次數
           };
+          
+          clearedCount++;
+          if (isFavorite) {
+            favoritePreservedCount++;
+          }
+          
+          // 記錄前3個題目的詳細資訊
+          if (clearedCount <= 3) {
+            console.log(`📝 [QuestionService] clearFileAnswers: 清空題目 ${clearedCount}`, {
+              questionId,
+              wasAnswered,
+              wasCorrect,
+              isFavorite,
+              after: userAnswers[questionId],
+            });
+          }
         }
       });
       
+      console.log(`📊 [QuestionService] clearFileAnswers: 清空統計`, {
+        clearedCount,
+        favoritePreservedCount,
+        totalQuestionIds: questionIds.length,
+      });
+      
       await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
+      console.log(`💾 [QuestionService] clearFileAnswers: 已儲存到 AsyncStorage`);
       
       // 清除該檔案的測驗進度
       await this.clearQuizProgress('DIRECT_FILE', null, fileName);
+      console.log(`🗑️ [QuestionService] clearFileAnswers: 已清除測驗進度`);
       
-      console.log(`✅ 已清空檔案 ${fileName} 的答題記錄`);
+      console.log(`✅ [QuestionService] clearFileAnswers: 已清空檔案 ${fileName} 的答題記錄`, {
+        clearedCount,
+        favoritePreservedCount,
+      });
     } catch (error) {
-      console.error('清空檔案答題記錄失敗:', error);
+      console.error(`❌ [QuestionService] clearFileAnswers: 清空檔案答題記錄失敗`, {
+        fileName,
+        error,
+      });
+      if (error instanceof Error) {
+        console.error(`❌ [QuestionService] clearFileAnswers: 錯誤訊息`, error.message);
+        console.error(`❌ [QuestionService] clearFileAnswers: 錯誤堆疊`, error.stack);
+      }
+      throw error;
     }
   }
 

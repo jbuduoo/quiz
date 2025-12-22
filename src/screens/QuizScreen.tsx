@@ -10,10 +10,11 @@ import {
   Linking,
   Image,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Question, UserAnswer } from '../types';
 import QuestionService from '../services/QuestionService';
@@ -24,6 +25,8 @@ import SearchQuestionModal from '../components/SearchQuestionModal';
 import { getQuestionDisplay, separateBackgroundAndQuestion } from '../utils/questionGroupParser';
 import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 import { useTheme } from '../contexts/ThemeContext';
+import { loadLocalQuestionFile } from '../utils/fileLoader';
+import { loadImportedQuestionFile } from '../services/ImportService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
@@ -38,7 +41,9 @@ const QuizScreen = () => {
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<'A' | 'B' | 'C' | 'D' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<'A' | 'B' | 'C' | 'D' | 'E' | string | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<Array<'A' | 'B' | 'C' | 'D' | 'E'>>([]); // 複選題的多選答案
+  const [isMultipleChoice, setIsMultipleChoice] = useState(false); // 是否為複選題
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<string, UserAnswer>>({});
@@ -47,6 +52,14 @@ const QuizScreen = () => {
   const [loading, setLoading] = useState(true);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showBackgroundForGroup, setShowBackgroundForGroup] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showEssayAnswer, setShowEssayAnswer] = useState(false);
+  const [scoreData, setScoreData] = useState<{
+    correctCount: number;
+    wrongCount: number;
+    totalCount: number;
+    score: number;
+  } | null>(null);
 
   useEffect(() => {
     loadQuestions();
@@ -58,10 +71,27 @@ const QuizScreen = () => {
     }
   }, [questions, currentIndex]);
 
-  // 當題目改變時，重置背景展開狀態
+  // 當題目改變時，重置背景展開狀態和問答題答案顯示狀態
   useEffect(() => {
     setShowBackgroundForGroup(false);
+    setShowEssayAnswer(false);
   }, [currentIndex]);
+
+  // 檢測是否為複選題
+  useEffect(() => {
+    if (questions.length > 0 && currentIndex < questions.length) {
+      const currentQuestion = questions[currentIndex];
+      if (currentQuestion) {
+        const correctAnswer = String(currentQuestion.Ans);
+        const isMultiple = correctAnswer.includes(',');
+        setIsMultipleChoice(isMultiple);
+        if (!isMultiple) {
+          // 單選題重置為單選模式
+          setSelectedAnswers([]);
+        }
+      }
+    }
+  }, [currentIndex, questions]);
 
   const loadQuestions = async () => {
     setLoading(true);
@@ -71,50 +101,146 @@ const QuizScreen = () => {
     // 如果是直接載入的檔案，從 AsyncStorage 讀取
     if (directFileName && testName === 'DIRECT_FILE') {
       try {
+        // 暫時清除 AsyncStorage 快取，強制重新載入檔案（確保 E 選項被正確處理）
+        // TODO: 可以在未來添加版本檢查機制，而不是每次都清除
+        await AsyncStorage.removeItem('@quiz:directQuestions');
         const storedData = await AsyncStorage.getItem('@quiz:directQuestions');
         if (storedData) {
-          questionsData = JSON.parse(storedData);
-        } else {
-          // 如果 AsyncStorage 沒有，直接載入檔案
-          // 所有平台都使用 require，讓 Metro bundler 打包檔案
-          let fileData: any;
+          // 從 AsyncStorage 讀取的資料也需要經過標準化處理，確保 E 選項被正確處理
+          const parsedData = JSON.parse(storedData);
+          const isArray = Array.isArray(parsedData);
+          const questionsArray = isArray ? parsedData : (parsedData.questions || []);
           
-          console.log(`📋 [QuizScreen] loadQuestions: 嘗試載入本地檔案: ${directFileName}`);
-          if (directFileName === 'example.json') {
-            console.log(`📋 [QuizScreen] loadQuestions: require example.json`);
-            try {
-              fileData = require('../../assets/data/questions/example.json');
-              console.log(`✅ [QuizScreen] loadQuestions: example.json 載入成功`);
-            } catch (requireError) {
-              console.error(`❌ [QuizScreen] loadQuestions: require example.json 失敗:`, requireError);
-            }
-          } else {
-            console.warn(`⚠️ [QuizScreen] loadQuestions: 不支援的檔案: ${directFileName}`);
-          }
-          
-          // 處理兩種格式：
-          // 1. 數組格式：[{...}, {...}]
-          // 2. 對象格式：{importDate, source, questions: [...]}
-          if (fileData) {
-            console.log(`📋 [QuizScreen] loadQuestions: 解析檔案資料`);
-            const isArray = Array.isArray(fileData);
-            const questionsArray = isArray ? fileData : (fileData.questions || []);
-            console.log(`📋 [QuizScreen] loadQuestions: isArray: ${isArray}, 題數: ${questionsArray.length}`);
-            
-            if (questionsArray.length > 0) {
-              questionsData = questionsArray.map((q: any, index: number) => ({
-                id: `${directFileName}_${index + 1}`,
-                content: String(q.Q || q.content || ''),
+          if (questionsArray.length > 0) {
+            questionsData = questionsArray.map((q: any, index: number) => {
+              // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+              let EValue: string | undefined = undefined;
+              if (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') {
+                EValue = String(q.E);
+              } else if (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '') {
+                EValue = String(q.options.E);
+              }
+              
+              // 調試：檢查第2題（複選題）的 E 選項載入情況（從 AsyncStorage）
+              if (index === 1) {
+                console.log('🔍 [載入題目-AsyncStorage] 第2題（複選題）E 選項載入:', {
+                  rawE: q.E,
+                  rawEType: typeof q.E,
+                  optionsE: q.options?.E,
+                  finalE: EValue,
+                  hasE: EValue !== undefined,
+                  fullQuestion: q
+                });
+              }
+              
+              return {
+                id: q.id || `${directFileName}_${index + 1}`,
+                content: String(q.content || q.Q || ''),
                 A: String(q.A || q.options?.A || ''),
                 B: String(q.B || q.options?.B || ''),
                 C: String(q.C || q.options?.C || ''),
                 D: String(q.D || q.options?.D || ''),
-                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
-                exp: String(q.Exp || q.exp || q.explanation || ''),
-                questionNumber: index + 1,
-              }));
-              console.log(`✅ [QuizScreen] loadQuestions: 標準化完成，題數: ${questionsData.length}`);
+                E: EValue,
+                Ans: String(q.Ans || q.correctAnswer || 'A'),
+                exp: String(q.exp || q.Exp || q.explanation || ''),
+                questionNumber: q.questionNumber || index + 1,
+              };
+            });
+            console.log(`✅ [QuizScreen] loadQuestions: 從 AsyncStorage 載入並標準化完成，題數: ${questionsData.length}`);
+            // 調試：檢查第2題的 E 選項是否正確載入
+            if (questionsData.length > 1) {
+              console.log('🔍 [載入題目-AsyncStorage] 第2題最終資料:', {
+                id: questionsData[1].id,
+                E: questionsData[1].E,
+                EType: typeof questionsData[1].E,
+                hasE: questionsData[1].E !== undefined
+              });
             }
+          } else {
+            questionsData = [];
+          }
+        } else {
+          // 如果 AsyncStorage 沒有，根據檔案類型選擇載入方式
+          console.log(`📋 [QuizScreen] loadQuestions: AsyncStorage 沒有快取，直接載入檔案: ${directFileName}`);
+          
+          if (directFileName) {
+            // 判斷是使用者匯入的檔案還是系統預設檔案
+            if (directFileName.startsWith('questions/')) {
+              // 使用者匯入的檔案：從 ImportService 載入
+              console.log(`📋 [QuizScreen] loadQuestions: 從 ImportService 載入使用者匯入檔案: ${directFileName}`);
+              try {
+                questionsData = await loadImportedQuestionFile(directFileName);
+                if (questionsData.length > 0) {
+                  console.log(`✅ [QuizScreen] loadQuestions: 從 ImportService 載入成功，題數: ${questionsData.length}`);
+                } else {
+                  console.error(`❌ [QuizScreen] loadQuestions: ${directFileName} 載入失敗（檔案不存在或格式不正確）`);
+                }
+              } catch (importError) {
+                console.error(`❌ [QuizScreen] loadQuestions: 載入使用者匯入檔案 ${directFileName} 時發生錯誤:`, importError);
+              }
+            } else {
+              // 系統預設檔案：使用 loadLocalQuestionFile
+              console.log(`📋 [QuizScreen] loadQuestions: 載入系統預設檔案: ${directFileName}`);
+              let fileData: any;
+              
+              try {
+                fileData = await loadLocalQuestionFile(directFileName);
+                if (fileData) {
+                  console.log(`✅ [QuizScreen] loadQuestions: ${directFileName} 載入成功`);
+                  
+                  // 處理兩種格式：
+                  // 1. 數組格式：[{...}, {...}]
+                  // 2. 對象格式：{importDate, source, questions: [...]}
+                  console.log(`📋 [QuizScreen] loadQuestions: 解析檔案資料`);
+                  const isArray = Array.isArray(fileData);
+                  const questionsArray = isArray ? fileData : (fileData.questions || []);
+                  console.log(`📋 [QuizScreen] loadQuestions: isArray: ${isArray}, 題數: ${questionsArray.length}`);
+                  
+                  if (questionsArray.length > 0) {
+                    questionsData = questionsArray.map((q: any, index: number) => {
+                      // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+                      let EValue: string | undefined = undefined;
+                      if (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') {
+                        EValue = String(q.E);
+                      } else if (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '') {
+                        EValue = String(q.options.E);
+                      }
+                      
+                      // 調試：檢查第2題（複選題）的 E 選項載入情況
+                      if (index === 1) {
+                        console.log('🔍 [載入題目] 第2題（複選題）E 選項載入:', {
+                          rawE: q.E,
+                          rawEType: typeof q.E,
+                          optionsE: q.options?.E,
+                          finalE: EValue,
+                          hasE: EValue !== undefined
+                        });
+                      }
+                      
+                      return {
+                        id: `${directFileName}_${index + 1}`,
+                        content: String(q.Q || q.content || ''),
+                        A: String(q.A || q.options?.A || ''),
+                        B: String(q.B || q.options?.B || ''),
+                        C: String(q.C || q.options?.C || ''),
+                        D: String(q.D || q.options?.D || ''),
+                        E: EValue,
+                        Ans: String(q.Ans || q.correctAnswer || 'A'),
+                        exp: String(q.Exp || q.exp || q.explanation || ''),
+                        questionNumber: index + 1,
+                      };
+                    });
+                    console.log(`✅ [QuizScreen] loadQuestions: 標準化完成，題數: ${questionsData.length}`);
+                  }
+                } else {
+                  console.error(`❌ [QuizScreen] loadQuestions: ${directFileName} 載入失敗（檔案不存在或格式不正確）`);
+                }
+              } catch (loadError) {
+                console.error(`❌ [QuizScreen] loadQuestions: 載入系統預設檔案 ${directFileName} 時發生錯誤:`, loadError);
+              }
+            }
+          } else {
+            console.warn(`⚠️ [QuizScreen] loadQuestions: 未指定檔案名稱`);
           }
         }
       } catch (error) {
@@ -155,7 +281,18 @@ const QuizScreen = () => {
     
     if (isAnsweredInCurrentQuiz) {
       // 如果題目在當前測驗中已答過，恢復之前的狀態
-      setSelectedAnswer(answer.selectedAnswer || null);
+      const savedAnswer = answer.selectedAnswer || null;
+      setSelectedAnswer(savedAnswer);
+      
+      // 如果是複選題且答案包含逗號，解析為陣列
+      const correctAnswer = String(currentQuestion.Ans);
+      const isMultiple = correctAnswer.includes(',');
+      if (isMultiple && savedAnswer && typeof savedAnswer === 'string' && savedAnswer.includes(',')) {
+        setSelectedAnswers(savedAnswer.split(',').map(a => a.trim()) as Array<'A' | 'B' | 'C' | 'D' | 'E'>);
+      } else if (isMultiple) {
+        setSelectedAnswers([]);
+      }
+      
       setShowResult(true);
       setIsCorrect(Boolean(answer.isCorrect));
       setIsUncertain(Boolean(answer?.isUncertain));
@@ -163,6 +300,7 @@ const QuizScreen = () => {
     } else {
       // 如果題目在當前測驗中未答過
       setSelectedAnswer(null);
+      setSelectedAnswers([]);
       setIsCorrect(false);
       setIsUncertain(false);
       // 載入收藏狀態（如果之前收藏過）
@@ -177,30 +315,74 @@ const QuizScreen = () => {
     }
   };
 
-  const handleSelectAnswer = async (option: 'A' | 'B' | 'C' | 'D') => {
+  const handleSelectAnswer = async (option: 'A' | 'B' | 'C' | 'D' | 'E') => {
     // 檢視模式下不允許選擇答案
     if (isReviewModeBool || showResult) return;
 
-    setSelectedAnswer(option);
     const currentQuestion = questions[currentIndex];
-    const correct = option === currentQuestion.Ans;
+    const correctAnswer = String(currentQuestion.Ans);
+    const isMultiple = correctAnswer.includes(',');
 
-    setIsCorrect(correct);
-    setShowResult(true);
+    if (isMultiple) {
+      // 複選題：切換選項選擇狀態
+      setSelectedAnswers(prev => {
+        if (prev.includes(option)) {
+          return prev.filter(a => a !== option);
+        } else {
+          return [...prev, option];
+        }
+      });
+      // 不立即顯示結果，等待提交
+    } else {
+      // 單選題：立即顯示結果（保持原有邏輯）
+      setSelectedAnswer(option);
+      const correct = option === correctAnswer;
+      setIsCorrect(correct);
+      setShowResult(true);
 
-    // 更新答題記錄，保存選擇的答案
-    await QuestionService.updateUserAnswer(currentQuestion.id, {
-      isCorrect: correct,
-      isAnswered: true,
-      selectedAnswer: option,
-    });
+      // 更新答題記錄，保存選擇的答案
+      await QuestionService.updateUserAnswer(currentQuestion.id, {
+        isCorrect: correct,
+        isAnswered: true,
+        selectedAnswer: option,
+      });
 
-    // 答題後，收藏狀態會自動同步錯題本狀態（在 updateUserAnswer 中處理）
+      // 答題後，收藏狀態會自動同步錯題本狀態（在 updateUserAnswer 中處理）
 
-    // 保存當前進度
+      // 保存當前進度
       await QuestionService.saveQuizProgress(testName, subject || null, series_no, currentIndex);
 
-    // 重新載入用戶答案
+      // 重新載入用戶答案
+      await loadUserAnswer();
+    }
+  };
+
+  // 提交複選題答案
+  const handleSubmitAnswer = async () => {
+    if (selectedAnswers.length === 0) return;
+
+    const currentQuestion = questions[currentIndex];
+    const correctAnswer = String(currentQuestion.Ans);
+    const correctOptions = correctAnswer.split(',').map(a => a.trim()).sort();
+    const selectedOptions = [...selectedAnswers].sort();
+    
+    // 比較兩個陣列是否完全相同（選項和數量都要對）
+    const isCorrect = 
+      correctOptions.length === selectedOptions.length &&
+      correctOptions.every((val, index) => val === selectedOptions[index]);
+    
+    setIsCorrect(isCorrect);
+    setShowResult(true);
+    const answerString = selectedAnswers.join(',');
+    setSelectedAnswer(answerString); // 保存為字串格式，用於顯示
+    
+    await QuestionService.updateUserAnswer(currentQuestion.id, {
+      isCorrect,
+      isAnswered: true,
+      selectedAnswer: answerString,
+    });
+    
+    await QuestionService.saveQuizProgress(testName, subject || null, series_no, currentIndex);
     await loadUserAnswer();
   };
 
@@ -235,17 +417,6 @@ const QuizScreen = () => {
     });
   };
 
-  // 生成完整的實例編號用於問題回報（純英文數字格式）
-  const getQuestionInstanceId = (question: Question, index: number): string => {
-    const questionNum = question.questionNumber || (index + 1);
-    // 使用題目中的原始欄位值（不經過 nameMapper），如果沒有則使用 route.params 的值
-    const qTestName = question.testName || testName || 'UNKNOWN';
-    const qSubject = question.subject || subject || 'UNKNOWN';
-    const qSeriesNo = question.series_no || series_no || 'UNKNOWN';
-    // 格式：IPAS_02-L2111409-1（測驗名稱-科目期數-題號）
-    return `${qTestName}-${qSubject}${qSeriesNo}-${questionNum}`;
-  };
-
   const handleReportProblem = async () => {
     const currentQuestion = questions[currentIndex];
     if (!currentQuestion) return;
@@ -254,8 +425,8 @@ const QuizScreen = () => {
       // 問題回報不會主動加入錯題本
       await loadUserAnswer();
       
-      // 生成完整的實例編號
-      const instanceId = getQuestionInstanceId(currentQuestion, currentIndex);
+      // 直接使用題目 ID
+      const instanceId = currentQuestion.id;
       
       // 開啟 Google 表單，並將題目編號作為 URL 參數傳遞（自動填入表單）
       const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
@@ -394,52 +565,42 @@ const QuizScreen = () => {
     
     questions.forEach(q => {
       const answer = userAnswers[q.id];
+      // 檢測是否為問答題
+      const isEssayQuestion = 
+        (!q.A || q.A.trim() === '') &&
+        (!q.B || q.B.trim() === '') &&
+        (!q.C || q.C.trim() === '') &&
+        (!q.D || q.D.trim() === '') &&
+        (!q.E || q.E === undefined || q.E.trim() === '');
+      
       if (answer?.isAnswered) {
         if (answer.isCorrect) {
           correctCount++;
         } else {
           wrongCount++;
         }
+      } else if (isEssayQuestion) {
+        // 問答題如果未答過，自動當作答對處理
+        correctCount++;
       }
     });
     
     const totalAnswered = correctCount + wrongCount;
     const score = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
     
-    // 顯示成績對話框
-    const scoreMessage = `成績\n\n答對：${correctCount}題\n答錯：${wrongCount}題\n總題數：${questions.length}題\n\n分數：${score}分`;
-    
-    if (typeof window !== 'undefined') {
-      // Web 平台
-      window.alert(scoreMessage);
-      await QuestionService.updateProgress();
-      // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
-      if (directFileName) {
-        await QuestionService.clearFileAnswers(directFileName);
-      } else {
-        await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
-      }
-      await QuestionService.updateProgress();
-      navigation.goBack();
-    } else {
-      // 原生平台
-      Alert.alert('成績', scoreMessage, [
-        {
-          text: '確定',
-          onPress: async () => {
-            await QuestionService.updateProgress();
-            // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
-            if (directFileName) {
-              await QuestionService.clearFileAnswers(directFileName);
-            } else {
-              await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
-            }
-            await QuestionService.updateProgress();
-            navigation.goBack();
-          },
-        },
-      ]);
+    // 保存分數（如果適用）
+    if (!directFileName) {
+      await QuestionService.saveQuizScore(testName, subject || null, series_no, score);
     }
+    
+    // 設置成績資料並顯示 Modal
+    setScoreData({
+      correctCount,
+      wrongCount,
+      totalCount: questions.length,
+      score,
+    });
+    setShowScoreModal(true);
   };
 
   const handleEndQuizConfirm = async () => {
@@ -447,26 +608,59 @@ const QuizScreen = () => {
     const userAnswers = await QuestionService.getUserAnswers();
     let completedCount = 0;
     
-    questions.forEach(q => {
+    for (const q of questions) {
       const answer = userAnswers[q.id];
+      // 檢測是否為問答題
+      const isEssayQuestion = 
+        (!q.A || q.A.trim() === '') &&
+        (!q.B || q.B.trim() === '') &&
+        (!q.C || q.C.trim() === '') &&
+        (!q.D || q.D.trim() === '') &&
+        (!q.E || q.E === undefined || q.E.trim() === '');
+      
       if (answer?.isAnswered) {
         completedCount++;
+      } else if (isEssayQuestion) {
+        // 問答題如果未答過，自動標記為答對
+        completedCount++;
+        await QuestionService.updateUserAnswer(q.id, {
+          isCorrect: true,
+          isAnswered: true,
+          selectedAnswer: 'ESSAY', // 標記為問答題
+        });
       }
-    });
+    }
     
     const uncompletedCount = questions.length - completedCount;
     
-    // 將未答的題目標記為錯誤
+    // 將未答的題目標記為錯誤（排除問答題）
     for (const question of questions) {
       const answer = userAnswers[question.id];
+      // 檢測是否為問答題
+      const isEssayQuestion = 
+        (!question.A || question.A.trim() === '') &&
+        (!question.B || question.B.trim() === '') &&
+        (!question.C || question.C.trim() === '') &&
+        (!question.D || question.D.trim() === '') &&
+        (!question.E || question.E === undefined || question.E.trim() === '');
+      
       if (!answer || !answer.isAnswered) {
-        // 未答的題目標記為錯誤
-        await QuestionService.updateUserAnswer(question.id, {
-          isAnswered: true,
-          isCorrect: false,
-          isInWrongBook: true,
-          selectedAnswer: undefined,
-        });
+        if (isEssayQuestion) {
+          // 問答題自動標記為答對
+          await QuestionService.updateUserAnswer(question.id, {
+            isCorrect: true,
+            isAnswered: true,
+            selectedAnswer: 'ESSAY', // 標記為問答題
+          });
+        } else {
+          // 未答的題目標記為錯誤
+          await QuestionService.updateUserAnswer(question.id, {
+            isAnswered: true,
+            isCorrect: false,
+            isInWrongBook: true,
+            selectedAnswer: undefined,
+          });
+        }
       }
     }
     
@@ -477,55 +671,188 @@ const QuizScreen = () => {
     
     questions.forEach(q => {
       const answer = updatedAnswers[q.id];
+      // 檢測是否為問答題
+      const isEssayQuestion = 
+        (!q.A || q.A.trim() === '') &&
+        (!q.B || q.B.trim() === '') &&
+        (!q.C || q.C.trim() === '') &&
+        (!q.D || q.D.trim() === '') &&
+        (!q.E || q.E === undefined || q.E.trim() === '');
+      
       if (answer?.isAnswered) {
         if (answer.isCorrect) {
           correctCount++;
         } else {
           wrongCount++;
         }
+      } else if (isEssayQuestion) {
+        // 問答題如果未答過，自動當作答對處理
+        correctCount++;
       }
     });
     
     const score = Math.round((correctCount / questions.length) * 100);
     
-    // 顯示成績對話框
-    const scoreMessage = `成績\n\n錯題：${wrongCount}題/總題數：${questions.length}題\n\n分數：${score}分`;
+    // 保存分數
+    await QuestionService.saveQuizScore(testName, subject || null, series_no, score);
     
-    if (typeof window !== 'undefined') {
-      // Web 平台
-      window.alert(scoreMessage);
-      await QuestionService.saveQuizScore(testName, subject || null, series_no, score);
-      await QuestionService.updateProgress();
-      await QuestionService.clearQuizProgress(testName, subject || null, series_no);
-      // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
-      if (directFileName) {
-        await QuestionService.clearFileAnswers(directFileName);
+    // 設置成績資料並顯示 Modal
+    setScoreData({
+      correctCount,
+      wrongCount,
+      totalCount: questions.length,
+      score,
+    });
+    setShowScoreModal(true);
+  };
+
+  const handleConfirm = async () => {
+    // 關閉成績 Modal
+    setShowScoreModal(false);
+    
+    console.log('📋 [QuizScreen] handleConfirm: 開始處理確認，準備返回首頁');
+    console.log('📋 [QuizScreen] handleConfirm: 測驗資訊', {
+      testName,
+      subject,
+      series_no,
+      directFileName,
+      questionCount: questions.length,
+    });
+    
+    // 確保所有答題記錄都已保存
+    const userAnswers = await QuestionService.getUserAnswers();
+    console.log('📋 [QuizScreen] handleConfirm: 當前答題記錄數量', Object.keys(userAnswers).length);
+    
+    // 檢查當前測驗的所有題目是否都已標記為已回答
+    // 如果沒有，確保所有題目都被標記（包括問答題和未答題目）
+    let answeredCount = 0;
+    const unAnsweredQuestions: Question[] = [];
+    
+    questions.forEach(q => {
+      const answer = userAnswers[q.id];
+      if (answer?.isAnswered) {
+        answeredCount++;
       } else {
-        await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+        unAnsweredQuestions.push(q);
       }
-      await QuestionService.updateProgress();
-      navigation.goBack();
-    } else {
-      // 原生平台
-      Alert.alert('成績', scoreMessage, [
-        {
-          text: '確定',
-          onPress: async () => {
-            await QuestionService.saveQuizScore(testName, subject, series_no, score);
-            await QuestionService.updateProgress();
-            await QuestionService.clearQuizProgress(testName, subject, series_no);
-            // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
-            if (directFileName) {
-              await QuestionService.clearFileAnswers(directFileName);
-            } else {
-              await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
-            }
-            await QuestionService.updateProgress();
-            navigation.goBack();
-          },
-        },
-      ]);
+    });
+    
+    console.log('📋 [QuizScreen] handleConfirm: 已回答題數', {
+      answeredCount,
+      totalQuestions: questions.length,
+      unAnsweredCount: unAnsweredQuestions.length,
+      allAnswered: answeredCount === questions.length,
+    });
+    
+    // 如果有未答的題目，確保它們都被標記（類似 handleEndQuizConfirm 的邏輯）
+    if (unAnsweredQuestions.length > 0) {
+      console.log('📋 [QuizScreen] handleConfirm: 發現未答題目，開始標記');
+      for (const question of unAnsweredQuestions) {
+        // 檢測是否為問答題
+        const isEssayQuestion = 
+          (!question.A || question.A.trim() === '') &&
+          (!question.B || question.B.trim() === '') &&
+          (!question.C || question.C.trim() === '') &&
+          (!question.D || question.D.trim() === '') &&
+          (!question.E || question.E === undefined || question.E.trim() === '');
+        
+        if (isEssayQuestion) {
+          // 問答題自動標記為答對
+          await QuestionService.updateUserAnswer(question.id, {
+            isCorrect: true,
+            isAnswered: true,
+            selectedAnswer: 'ESSAY',
+          });
+          console.log(`✅ [QuizScreen] handleConfirm: 問答題 ${question.id} 已標記為答對`);
+        } else {
+          // 未答的題目標記為錯誤
+          await QuestionService.updateUserAnswer(question.id, {
+            isAnswered: true,
+            isCorrect: false,
+            isInWrongBook: true,
+            selectedAnswer: undefined,
+          });
+          console.log(`✅ [QuizScreen] handleConfirm: 未答題目 ${question.id} 已標記為錯誤`);
+        }
+      }
+      console.log('✅ [QuizScreen] handleConfirm: 所有未答題目已標記完成');
     }
+    
+    await QuestionService.updateProgress();
+    console.log('✅ [QuizScreen] handleConfirm: 進度已更新');
+    
+    // 保存當前測驗信息到 AsyncStorage，供首頁使用
+    const quizInfo = {
+      testName,
+      subject: subject || null,
+      series_no,
+      directFileName: directFileName || null,
+      questionIds: questions.map(q => q.id),
+    };
+    await AsyncStorage.setItem('@quiz:lastCompletedQuiz', JSON.stringify(quizInfo));
+    console.log('✅ [QuizScreen] handleConfirm: 測驗資訊已保存到 AsyncStorage');
+    
+    // 最終確認：檢查所有題目是否都已標記
+    const finalAnswers = await QuestionService.getUserAnswers();
+    let finalAnsweredCount = 0;
+    questions.forEach(q => {
+      const answer = finalAnswers[q.id];
+      if (answer?.isAnswered) {
+        finalAnsweredCount++;
+      }
+    });
+    console.log('📋 [QuizScreen] handleConfirm: 最終確認答題記錄', {
+      finalAnsweredCount,
+      totalQuestions: questions.length,
+      allAnswered: finalAnsweredCount === questions.length,
+      sampleAnswers: questions.slice(0, 3).map(q => ({
+        questionId: q.id,
+        isAnswered: finalAnswers[q.id]?.isAnswered,
+        selectedAnswer: finalAnswers[q.id]?.selectedAnswer,
+      })),
+    });
+    
+    // 返回首頁
+    console.log('🚀 [QuizScreen] handleConfirm: 準備返回首頁');
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'FileNameList' }],
+      })
+    );
+    console.log('✅ [QuizScreen] handleConfirm: 已返回首頁');
+  };
+
+  const handleReviewQuiz = async () => {
+    // 獲取所有題目的 ID
+    const questionIds = questions.map(q => q.id);
+    
+    // 導航到檢視畫面
+    navigation.navigate('ReviewQuiz', {
+      questionId: questionIds[0],
+      questionIds: questionIds,
+    });
+  };
+
+  const handleNewStart = async () => {
+    await QuestionService.updateProgress();
+    
+    // 結算分數後清除答題記錄，讓按鈕顯示「開始測驗」
+    if (directFileName) {
+      await QuestionService.clearFileAnswers(directFileName);
+    } else {
+      await QuestionService.clearSeriesAnswers(testName, subject || null, series_no);
+      await QuestionService.clearQuizProgress(testName, subject || null, series_no);
+    }
+    await QuestionService.updateProgress();
+    
+    // 重置導航堆疊並返回首頁
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'FileNameList' }],
+      })
+    );
   };
 
   const handleEndQuiz = async () => {
@@ -591,9 +918,29 @@ const QuizScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {isReviewModeBool 
-              ? `檢視 - ${subject ? `${subject} ` : ''}${series_no}` 
-              : `${subject ? `${subject} ` : ''}${series_no}`}
+            {(() => {
+              // 如果是直接載入的檔案，從檔案路徑中提取測驗名稱
+              if (directFileName) {
+                // 移除 "questions/" 前綴和時間戳後綴，只保留測驗名稱
+                let displayName = directFileName
+                  .replace(/^questions\//, '') // 移除前綴
+                  .replace(/\/\d+\.json$/, '') // 移除時間戳和 .json
+                  .replace(/\.json$/, ''); // 如果還有 .json，也移除
+                
+                // 如果路徑中包含斜線，取最後一部分（測驗名稱）
+                const parts = displayName.split('/');
+                displayName = parts[parts.length - 1];
+                
+                return isReviewModeBool 
+                  ? `檢視 - ${displayName}` 
+                  : displayName;
+              }
+              
+              // 一般模式：顯示 subject 和 series_no
+              return isReviewModeBool 
+                ? `檢視 - ${subject ? `${subject} ` : ''}${series_no}` 
+                : `${subject ? `${subject} ` : ''}${series_no}`;
+            })()}
           </Text>
         </View>
         <Text style={styles.progressText}>{progress}</Text>
@@ -683,44 +1030,168 @@ const QuizScreen = () => {
           </View>
         </View>
 
-        {(['A', 'B', 'C', 'D'] as const).map((option) => {
-          const optionText = currentQuestion[option];
-          const isSelected = Boolean(selectedAnswer === option);
-          const isCorrectOption = Boolean(option === currentQuestion.Ans);
-          const showCorrect = Boolean(showResult && isCorrectOption);
-          const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
+        {(() => {
+          // 檢測是否為問答題（所有選項都為空）
+          const isEssayQuestion = 
+            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
+            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
+            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
+            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
+            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
 
-          return (
+          // 如果是問答題，顯示「顯示答案」按鈕
+          if (isEssayQuestion) {
+            // 按下按鈕後，橘色區域就不顯示了
+            if (!showEssayAnswer) {
+              return (
+                <View style={styles.essayQuestionContainer}>
+                  <Text style={styles.essayQuestionHint}>
+                    此題為問答題，請參考答案與詳解
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.showAnswerButton}
+                    onPress={async () => {
+                      setShowEssayAnswer(true);
+                      setSelectedAnswer('ESSAY'); // 設置答案，以便顯示結果文字
+                      setShowResult(true); // 顯示結果，以便顯示詳解
+                      setIsCorrect(true); // 問答題自動標記為答對
+                      // 問答題自動標記為答對
+                      await QuestionService.updateUserAnswer(currentQuestion.id, {
+                        isCorrect: true,
+                        isAnswered: true,
+                        selectedAnswer: 'ESSAY', // 標記為問答題
+                      });
+                      // 保存當前進度
+                      await QuestionService.saveQuizProgress(testName, subject || null, series_no, currentIndex);
+                      // 重新載入用戶答案
+                      await loadUserAnswer();
+                    }}
+                  >
+                    <Text style={styles.showAnswerButtonText}>顯示答案</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+            // 按下按鈕後，不顯示橘色區域，直接返回 null（答案和詳解會在下方顯示）
+            return null;
+          }
+
+          // 動態決定要顯示的選項
+          const optionsToShow: Array<'A' | 'B' | 'C' | 'D' | 'E'> = [];
+          
+          // 檢查是否為是非題（C 和 D 都為空）
+          const isTrueFalse = !currentQuestion.C && !currentQuestion.D;
+          
+          // 總是顯示 A 和 B
+          if (currentQuestion.A) optionsToShow.push('A');
+          if (currentQuestion.B) optionsToShow.push('B');
+          
+          // 如果不是是非題，顯示 C 和 D（如果有內容）
+          if (!isTrueFalse) {
+            if (currentQuestion.C) optionsToShow.push('C');
+            if (currentQuestion.D) optionsToShow.push('D');
+          }
+          
+          // 如果有 E 選項（存在且不為空字串），顯示 E（不論是否為是非題）
+          // 檢查 E 選項：必須存在、不為 null、不為空字串
+          const hasE = currentQuestion.E !== undefined && 
+                      currentQuestion.E !== null && 
+                      String(currentQuestion.E).trim() !== '';
+          
+          // 調試：檢查 E 選項的狀態
+          if (currentIndex === 1) {
+            console.log('🔍 [顯示選項] 第2題（複選題）E 選項檢查:', {
+              E: currentQuestion.E,
+              EType: typeof currentQuestion.E,
+              EUndefined: currentQuestion.E === undefined,
+              ENull: currentQuestion.E === null,
+              ETrimmed: currentQuestion.E ? String(currentQuestion.E).trim() : 'N/A',
+              hasE: hasE,
+              optionsToShowBeforeE: [...optionsToShow]
+            });
+          }
+          
+          if (hasE) {
+            optionsToShow.push('E');
+            if (currentIndex === 1) {
+              console.log('✅ [顯示選項] E 選項已加入，optionsToShow:', optionsToShow);
+            }
+          } else {
+            if (currentIndex === 1) {
+              console.log('❌ [顯示選項] E 選項未加入，原因:', {
+                isUndefined: currentQuestion.E === undefined,
+                isNull: currentQuestion.E === null,
+                isEmpty: currentQuestion.E ? String(currentQuestion.E).trim() === '' : 'N/A'
+              });
+            }
+          }
+          
+          return optionsToShow.map((option) => {
+            const optionText = currentQuestion[option] || '';
+            // 複選題使用 selectedAnswers，單選題使用 selectedAnswer
+            const isSelected = isMultipleChoice
+              ? selectedAnswers.includes(option)
+              : Boolean(selectedAnswer === option);
+            
+            // 檢查是否為正確選項（支援複選）
+            const correctAnswer = String(currentQuestion.Ans);
+            let isCorrectOption = false;
+            if (correctAnswer.includes(',')) {
+              const correctOptions = correctAnswer.split(',').map(a => a.trim());
+              isCorrectOption = correctOptions.includes(option);
+            } else {
+              isCorrectOption = option === correctAnswer;
+            }
+            
+            const showCorrect = Boolean(showResult && isCorrectOption);
+            const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
+
+            return (
+              <TouchableOpacity
+                key={option}
+                style={[
+                  styles.optionButton,
+                  isSelected && styles.optionButtonSelected,
+                  showCorrect && styles.optionButtonCorrect,
+                  showWrong && styles.optionButtonWrong,
+                ]}
+                onPress={() => handleSelectAnswer(option)}
+                disabled={Boolean(isReviewModeBool || showResult)}
+              >
+                <Text style={styles.optionLabel}>({option})</Text>
+                <View style={styles.optionContent}>
+                  <RichTextWithImages
+                    text={optionText}
+                    textStyle={styles.optionText}
+                    imageStyle={styles.optionImage}
+                    contextText={`${currentQuestion.content} ${optionText}`}
+                    testName={currentQuestion.testName}
+                    subject={currentQuestion.subject}
+                    series_no={currentQuestion.series_no}
+                    questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                    optionLabel={option}
+                    expandable={true}
+                    maxLength={100}
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          });
+        })()}
+
+        {/* 複選題提交按鈕 - 僅在複選題且未顯示結果時顯示 */}
+        {isMultipleChoice && !showResult && !isReviewModeBool && selectedAnswers.length > 0 && (
+          <View style={styles.submitButtonContainer}>
             <TouchableOpacity
-              key={option}
-              style={[
-                styles.optionButton,
-                isSelected && styles.optionButtonSelected,
-                showCorrect && styles.optionButtonCorrect,
-                showWrong && styles.optionButtonWrong,
-              ]}
-              onPress={() => handleSelectAnswer(option)}
-              disabled={Boolean(isReviewModeBool || showResult)}
+              style={styles.submitButton}
+              onPress={handleSubmitAnswer}
             >
-              <Text style={styles.optionLabel}>({option})</Text>
-              <View style={styles.optionContent}>
-                <RichTextWithImages
-                  text={optionText}
-                  textStyle={styles.optionText}
-                  imageStyle={styles.optionImage}
-                  contextText={`${currentQuestion.content} ${optionText}`}
-                  testName={currentQuestion.testName}
-                  subject={currentQuestion.subject}
-                  series_no={currentQuestion.series_no}
-                  questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
-                  optionLabel={option}
-                  expandable={true}
-                  maxLength={100}
-                />
-              </View>
+              <Text style={styles.submitButtonText}>
+                提交答案 ({selectedAnswers.length})
+              </Text>
             </TouchableOpacity>
-          );
-        })}
+          </View>
+        )}
 
         {/* 新增功能按鈕區域 - 在選項 (D) 下方，檢視模式下隱藏 */}
         {!isReviewModeBool && (
@@ -741,39 +1212,50 @@ const QuizScreen = () => {
           </View>
         )}
 
-        {showResult && (
-          <View style={styles.resultContainer}>
-            {selectedAnswer ? (
-              <>
-                <Text style={[styles.resultText, isCorrect ? styles.resultTextCorrect : styles.resultTextWrong]}>
-                  {isCorrect ? '✓ 答對了！' : '✗ 答錯了'}
-                </Text>
-                {!isCorrect && (
-                  <Text style={styles.correctAnswerText}>
-                    正確答案：{currentQuestion.Ans}
+        {showResult && (() => {
+          // 檢測是否為問答題
+          const isEssayQuestion = 
+            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
+            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
+            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
+            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
+            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
+          
+          // 問答題和非問答題都顯示完整的結果和詳解（詳解放在選項下方，與選擇題相同位置）
+          return (
+            <View style={styles.resultContainer}>
+              {selectedAnswer ? (
+                <>
+                  <Text style={[styles.resultText, isCorrect ? styles.resultTextCorrect : styles.resultTextWrong]}>
+                    {isCorrect ? '✓ 答對了！' : '✗ 答錯了'}
                   </Text>
-                )}
-              </>
-            ) : (
-              // 檢視模式下，未答的題目顯示「未作答」
-              isReviewModeBool && (
-                <Text style={[styles.resultText, { color: '#999999' }]}>
-                  ⚪ 未作答
-                </Text>
-              )
-            )}
-            <RichTextWithImages
-              text={currentQuestion.exp}
-              textStyle={styles.explanationText}
-              imageStyle={styles.explanationImage}
-              contextText={`${currentQuestion.content} ${currentQuestion.exp}`}
-              testName={currentQuestion.testName}
-              subject={currentQuestion.subject}
-              series_no={currentQuestion.series_no}
-              questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
-            />
-          </View>
-        )}
+                  {!isCorrect && !isEssayQuestion && (
+                    <Text style={styles.correctAnswerText}>
+                      正確答案：{currentQuestion.Ans}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                // 檢視模式下，未答的題目顯示「未作答」
+                isReviewModeBool && (
+                  <Text style={[styles.resultText, { color: '#999999' }]}>
+                    ⚪ 未作答
+                  </Text>
+                )
+              )}
+              <RichTextWithImages
+                text={currentQuestion.exp}
+                textStyle={styles.explanationText}
+                imageStyle={styles.explanationImage}
+                contextText={`${currentQuestion.content} ${currentQuestion.exp}`}
+                testName={currentQuestion.testName}
+                subject={currentQuestion.subject}
+                series_no={currentQuestion.series_no}
+                questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+              />
+            </View>
+          );
+        })()}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8) }]}>
@@ -784,24 +1266,22 @@ const QuizScreen = () => {
         >
           <Text style={styles.footerButtonText}>上一題</Text>
         </TouchableOpacity>
-        {/* 檢視模式下隱藏「我的最愛」按鈕 */}
-        {!isReviewModeBool && (
-          <TouchableOpacity
-            style={[
-              styles.footerButton,
-              styles.footerButtonYellow,
-              styles.footerButtonFavorite,
-            ]}
-            onPress={handleToggleFavorite}
-          >
-            <Text style={styles.footerButtonText} numberOfLines={1}>
-              <Text style={styles.footerButtonIconText}>
-                {isFavorite ? '❤️' : '🤍'}
-              </Text>
-              {' 最愛'}
+        {/* 檢視模式下也顯示「我的最愛」按鈕 */}
+        <TouchableOpacity
+          style={[
+            styles.footerButton,
+            styles.footerButtonYellow,
+            styles.footerButtonFavorite,
+          ]}
+          onPress={handleToggleFavorite}
+        >
+          <Text style={styles.footerButtonText} numberOfLines={1}>
+            <Text style={styles.footerButtonIconText}>
+              {isFavorite ? '❤️' : '🤍'}
             </Text>
-          </TouchableOpacity>
-        )}
+            {' 最愛'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.footerButton, styles.footerButtonNav]}
           onPress={handleNext}
@@ -818,6 +1298,46 @@ const QuizScreen = () => {
           onClose={() => setShowSearchModal(false)}
         />
       )}
+
+      {/* 成績 Modal */}
+      <Modal
+        visible={showScoreModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowScoreModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>成績</Text>
+            {scoreData && (
+              <>
+                <View style={styles.scoreInfo}>
+                  <Text style={styles.scoreText}>
+                    答對：{scoreData.correctCount}題
+                  </Text>
+                  <Text style={styles.scoreText}>
+                    答錯：{scoreData.wrongCount}題
+                  </Text>
+                  <Text style={styles.scoreText}>
+                    總題數：{scoreData.totalCount}題
+                  </Text>
+                  <Text style={styles.scoreNumber}>
+                    分數：{scoreData.score}分
+                  </Text>
+                </View>
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonConfirm]}
+                    onPress={handleConfirm}
+                  >
+                    <Text style={styles.modalButtonText}>確定</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1069,6 +1589,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 54,
   },
   footerButtonNav: {
     flex: 0.8,
@@ -1095,6 +1616,75 @@ const styles = StyleSheet.create({
   },
   footerButtonIconText: {
     fontSize: 22,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 24,
+    width: '80%',
+    maxWidth: 400,
+    alignItems: 'center',
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+      elevation: 5,
+    } : {}),
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 20,
+  },
+  scoreInfo: {
+    width: '100%',
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  scoreText: {
+    fontSize: 16,
+    color: '#333333',
+    marginBottom: 8,
+  },
+  scoreNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#007AFF',
+    marginTop: 8,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    marginTop: 8,
+    justifyContent: 'center',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonConfirm: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#4CAF50',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '600',
   },
   bottomActionButtons: {
@@ -1141,6 +1731,90 @@ const styles = StyleSheet.create({
   bottomActionButtonTextActive: {
     color: '#333333',
     fontWeight: '600',
+  },
+  submitButtonContainer: {
+    marginTop: 16,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  submitButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#45a049',
+    minHeight: 48,
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  essayQuestionContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  essayQuestionHint: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 16,
+    textAlign: 'left',
+    fontStyle: 'italic',
+  },
+  showAnswerButton: {
+    backgroundColor: '#FF9800',
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  showAnswerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  essayAnswerContainer: {
+    marginTop: 16,
+  },
+  essayAnswerSection: {
+    marginBottom: 16,
+  },
+  essayAnswerLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  essayAnswerText: {
+    fontSize: 16,
+    color: '#333333',
+    lineHeight: 24,
+  },
+  essayAnswerImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  essayExplanationSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  essayExplanationLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
   },
 });
 

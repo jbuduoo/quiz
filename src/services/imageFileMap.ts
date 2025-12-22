@@ -4,24 +4,12 @@
 // 舊格式：{testName}_{subject}_{series_no}/{imageFileName} (向後相容)
 // 此檔案由 scripts/updateImageFileMap.js 自動生成
 
+// 圖片檔案映射表
+// 注意：當圖片檔案不存在時，此映射表為空
+// 當圖片檔案存在時，請使用 scripts/updateImageFileMap.js 重新生成此檔案
 export const imageFileMap: Record<string, any> = {
-  'IPAS_01/L11/11401/12Q1.png': require('../../assets/images/IPAS_01/L11/11401/12Q1.png'),
-  'IPAS_01/L11/11401/15Q1.png': require('../../assets/images/IPAS_01/L11/11401/15Q1.png'),
-  'IPAS_01/L11/11401/3Q1.png': require('../../assets/images/IPAS_01/L11/11401/3Q1.png'),
-  'IPAS_01/L11/11401/5A1.png': require('../../assets/images/IPAS_01/L11/11401/5A1.png'),
-  'IPAS_01/L11/11401/5B1.png': require('../../assets/images/IPAS_01/L11/11401/5B1.png'),
-  'IPAS_01/L11/11401/5C1.png': require('../../assets/images/IPAS_01/L11/11401/5C1.png'),
-  'IPAS_01/L11/11401/5D1.png': require('../../assets/images/IPAS_01/L11/11401/5D1.png'),
-  'IPAS_01/L11/11401/6Q1.png': require('../../assets/images/IPAS_01/L11/11401/6Q1.png'),
-  'IPAS_02/L23/11411/41Q1.png': require('../../assets/images/IPAS_02/L23/11411/41Q1.png'),
-  'IPAS_02/L23/11411/42Q1.png': require('../../assets/images/IPAS_02/L23/11411/42Q1.png'),
-  'IPAS_02/L23/11411/43Q1.png': require('../../assets/images/IPAS_02/L23/11411/43Q1.png'),
-  'IPAS_02/L23/11411/44Q1.png': require('../../assets/images/IPAS_02/L23/11411/44Q1.png'),
-  'IPAS_02/L23/11411/45A1.png': require('../../assets/images/IPAS_02/L23/11411/45A1.png'),
-  'IPAS_02/L23/11411/45B1.png': require('../../assets/images/IPAS_02/L23/11411/45B1.png'),
-  'IPAS_02/L23/11411/45C1.png': require('../../assets/images/IPAS_02/L23/11411/45C1.png'),
-  'IPAS_02/L23/11411/45D1.png': require('../../assets/images/IPAS_02/L23/11411/45D1.png'),
-  'IPAS_02/L23/11411/45Q1.png': require('../../assets/images/IPAS_02/L23/11411/45Q1.png'),
+  // 圖片檔案目前不存在，已暫時清空映射表
+  // 當圖片檔案存在時，請執行 scripts/updateImageFileMap.js 重新生成
 };
 
 /**

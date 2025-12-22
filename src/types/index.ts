@@ -6,7 +6,8 @@ export interface Question {
   B: string;                      // 選項 B
   C: string;                      // 選項 C
   D: string;                      // 選項 D
-  Ans: 'A' | 'B' | 'C' | 'D';    // 正確答案
+  E?: string;                     // 選項 E（可選，用於複選題）
+  Ans: 'A' | 'B' | 'C' | 'D' | 'E' | string;    // 正確答案（支援單選、複選如 "A,B"）
   exp: string;                    // 詳解
   testName?: string;              // 測驗名稱（例如：信託營業員）- 可選，通常從檔案 metadata 取得
   subject?: string;               // 所屬科目（例如：信託法規）- 可選，通常從檔案 metadata 取得
@@ -20,7 +21,7 @@ export interface UserAnswer {
   questionId: string;
   isCorrect: boolean;            // 是否答對
   isAnswered: boolean;           // 是否已作答
-  selectedAnswer?: 'A' | 'B' | 'C' | 'D';  // 用戶選擇的答案
+  selectedAnswer?: 'A' | 'B' | 'C' | 'D' | 'E' | string;  // 用戶選擇的答案（支援單選、複選如 "A,B"）
   isFavorite: boolean;           // 是否收藏
   isInWrongBook: boolean;        // 是否在錯題本
   isUncertain: boolean;          // 是否不確定

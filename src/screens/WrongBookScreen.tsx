@@ -39,13 +39,16 @@ const WrongBookScreen = () => {
   
   // 答題相關狀態
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<'A' | 'B' | 'C' | 'D' | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<'A' | 'B' | 'C' | 'D' | 'E' | string | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<Array<'A' | 'B' | 'C' | 'D' | 'E'>>([]); // 複選題的多選答案
+  const [isMultipleChoice, setIsMultipleChoice] = useState(false); // 是否為複選題
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [userAnswer, setUserAnswer] = useState<UserAnswer | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [showBackgroundForGroup, setShowBackgroundForGroup] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showEssayAnswer, setShowEssayAnswer] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
   useEffect(() => {
@@ -72,7 +75,24 @@ const WrongBookScreen = () => {
   // 當題目改變時，重置背景展開狀態
   useEffect(() => {
     setShowBackgroundForGroup(false);
+    setShowEssayAnswer(false);
   }, [currentIndex]);
+
+  // 檢測是否為複選題
+  useEffect(() => {
+    if (questions.length > 0 && currentIndex < questions.length) {
+      const currentQuestion = questions[currentIndex];
+      if (currentQuestion) {
+        const correctAnswer = String(currentQuestion.Ans);
+        const isMultiple = correctAnswer.includes(',');
+        setIsMultipleChoice(isMultiple);
+        if (!isMultiple) {
+          // 單選題重置為單選模式
+          setSelectedAnswers([]);
+        }
+      }
+    }
+  }, [currentIndex, questions]);
 
   const loadData = async () => {
     setLoading(true);
@@ -130,7 +150,18 @@ const WrongBookScreen = () => {
     
     if (answer) {
       setUserAnswer(answer);
-      setSelectedAnswer(answer.selectedAnswer || null);
+      const savedAnswer = answer.selectedAnswer || null;
+      setSelectedAnswer(savedAnswer);
+      
+      // 如果是複選題且答案包含逗號，解析為陣列
+      const correctAnswer = String(currentQuestion.Ans);
+      const isMultiple = correctAnswer.includes(',');
+      if (isMultiple && savedAnswer && typeof savedAnswer === 'string' && savedAnswer.includes(',')) {
+        setSelectedAnswers(savedAnswer.split(',').map(a => a.trim()) as Array<'A' | 'B' | 'C' | 'D' | 'E'>);
+      } else if (isMultiple) {
+        setSelectedAnswers([]);
+      }
+      
       setShowResult(Boolean(answer.isAnswered));
       setIsCorrect(Boolean(answer.isCorrect));
       setIsFavorite(Boolean(answer.isFavorite));
@@ -138,6 +169,7 @@ const WrongBookScreen = () => {
       // 如果還是沒有答案記錄，設置預設值（理論上不應該發生）
       setUserAnswer(null);
       setSelectedAnswer(null);
+      setSelectedAnswers([]);
       setShowResult(false);
       setIsCorrect(false);
       setIsFavorite(true); // 複習錯題頁面預設為已收藏
@@ -169,24 +201,71 @@ const WrongBookScreen = () => {
     setFilter(newFilter);
   };
 
-  const handleSelectAnswer = async (option: 'A' | 'B' | 'C' | 'D') => {
+  const handleSelectAnswer = async (option: 'A' | 'B' | 'C' | 'D' | 'E') => {
     if (showResult) return;
 
-    setSelectedAnswer(option);
     const currentQuestion = questions[currentIndex];
-    const correct = option === currentQuestion.Ans;
+    const correctAnswer = String(currentQuestion.Ans);
+    const isMultiple = correctAnswer.includes(',');
 
-    setIsCorrect(correct);
+    if (isMultiple) {
+      // 複選題：切換選項選擇狀態
+      setSelectedAnswers(prev => {
+        if (prev.includes(option)) {
+          return prev.filter(a => a !== option);
+        } else {
+          return [...prev, option];
+        }
+      });
+      // 不立即顯示結果，等待提交
+    } else {
+      // 單選題：立即顯示結果（保持原有邏輯）
+      setSelectedAnswer(option);
+      const correct = option === correctAnswer;
+      setIsCorrect(correct);
+      setShowResult(true);
+
+      // 更新答題記錄
+      await QuestionService.updateUserAnswer(currentQuestion.id, {
+        isCorrect: correct,
+        isAnswered: true,
+        selectedAnswer: option,
+      });
+
+      // 重新載入用戶答案
+      await loadUserAnswer();
+      
+      // 重新載入統計資料
+      const statsData = await QuestionService.getWrongBookStats();
+      setStats(statsData);
+    }
+  };
+
+  // 提交複選題答案
+  const handleSubmitAnswer = async () => {
+    if (selectedAnswers.length === 0) return;
+
+    const currentQuestion = questions[currentIndex];
+    const correctAnswer = String(currentQuestion.Ans);
+    const correctOptions = correctAnswer.split(',').map(a => a.trim()).sort();
+    const selectedOptions = [...selectedAnswers].sort();
+    
+    // 比較兩個陣列是否完全相同（選項和數量都要對）
+    const isCorrect = 
+      correctOptions.length === selectedOptions.length &&
+      correctOptions.every((val, index) => val === selectedOptions[index]);
+    
+    setIsCorrect(isCorrect);
     setShowResult(true);
-
-    // 更新答題記錄
+    const answerString = selectedAnswers.join(',');
+    setSelectedAnswer(answerString); // 保存為字串格式，用於顯示
+    
     await QuestionService.updateUserAnswer(currentQuestion.id, {
-      isCorrect: correct,
+      isCorrect,
       isAnswered: true,
-      selectedAnswer: option,
+      selectedAnswer: answerString,
     });
-
-    // 重新載入用戶答案
+    
     await loadUserAnswer();
     
     // 重新載入統計資料
@@ -354,11 +433,8 @@ const WrongBookScreen = () => {
     if (!currentQuestion) return;
     
     try {
-      const questionNum = currentQuestion.questionNumber || (currentIndex + 1);
-      const qTestName = currentQuestion.testName || 'UNKNOWN';
-      const qSubject = currentQuestion.subject || 'UNKNOWN';
-      const qSeriesNo = currentQuestion.series_no || 'UNKNOWN';
-      const instanceId = `${qTestName}-${qSubject}${qSeriesNo}-${questionNum}`;
+      // 直接使用題目 ID
+      const instanceId = currentQuestion.id;
       
       const googleFormUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfnfLFKCPYCRXbY12_xv5abVfvon_FTULBc0FYd4d7xD2A7ZQ/viewform?usp=pp_url&entry.654895695=${encodeURIComponent(instanceId)}`;
       
@@ -403,7 +479,7 @@ const WrongBookScreen = () => {
               resizeMode="contain"
             />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>複習錯題</Text>
+          <Text style={styles.headerTitle}>複習錯題頁面</Text>
           <View style={styles.headerRight} />
         </View>
 
@@ -434,7 +510,7 @@ const WrongBookScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            複習錯題
+            複習錯題頁面
           </Text>
         </View>
         <Text style={styles.progressText}>{progress}</Text>
@@ -521,42 +597,153 @@ const WrongBookScreen = () => {
           </View>
         </View>
 
-        {(['A', 'B', 'C', 'D'] as const).map((option) => {
-          const optionText = currentQuestion[option];
-          const isSelected = Boolean(selectedAnswer === option);
-          const isCorrectOption = Boolean(option === currentQuestion.Ans);
-          const showCorrect = Boolean(showResult && isCorrectOption);
-          const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
+        {(() => {
+          // 檢測是否為問答題（所有選項都為空）
+          const isEssayQuestion = 
+            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
+            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
+            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
+            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
+            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
 
-          return (
-            <TouchableOpacity
-              key={option}
-              style={[
-                styles.optionButton,
-                isSelected && styles.optionButtonSelected,
-                showCorrect && styles.optionButtonCorrect,
-                showWrong && styles.optionButtonWrong,
-              ]}
-              onPress={() => handleSelectAnswer(option)}
-              disabled={Boolean(showResult)}
-            >
-              <Text style={styles.optionLabel}>({option})</Text>
-              <View style={styles.optionContent}>
-                <RichTextWithImages
-                  text={optionText}
-                  textStyle={styles.optionText}
-                  imageStyle={styles.optionImage}
-                  contextText={`${currentQuestion.content} ${optionText}`}
-                  testName={currentQuestion.testName}
-                  subject={currentQuestion.subject}
-                  series_no={currentQuestion.series_no}
-                  questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
-                  optionLabel={option}
-                />
+          // 如果是問答題，顯示「顯示答案」按鈕
+          if (isEssayQuestion) {
+            return (
+              <View style={styles.essayQuestionContainer}>
+                <Text style={styles.essayQuestionHint}>
+                  此題為問答題，請參考答案與詳解
+                </Text>
+                {!showEssayAnswer && (
+                  <TouchableOpacity
+                    style={styles.showAnswerButton}
+                    onPress={() => setShowEssayAnswer(true)}
+                  >
+                    <Text style={styles.showAnswerButtonText}>顯示答案</Text>
+                  </TouchableOpacity>
+                )}
+                {showEssayAnswer && (
+                  <View style={styles.essayAnswerContainer}>
+                    {currentQuestion.Ans && currentQuestion.Ans.trim() !== '' && (
+                      <View style={styles.essayAnswerSection}>
+                        <Text style={styles.essayAnswerLabel}>答案：</Text>
+                        <RichTextWithImages
+                          text={currentQuestion.Ans}
+                          textStyle={styles.essayAnswerText}
+                          imageStyle={styles.essayAnswerImage}
+                          contextText={currentQuestion.Ans}
+                          testName={currentQuestion.testName}
+                          subject={currentQuestion.subject}
+                          series_no={currentQuestion.series_no}
+                          questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                        />
+                      </View>
+                    )}
+                    {currentQuestion.exp && currentQuestion.exp.trim() !== '' && (
+                      <View style={styles.essayExplanationSection}>
+                        <Text style={styles.essayExplanationLabel}>詳解：</Text>
+                        <RichTextWithImages
+                          text={currentQuestion.exp}
+                          textStyle={styles.explanationText}
+                          imageStyle={styles.explanationImage}
+                          contextText={`${currentQuestion.content} ${currentQuestion.exp}`}
+                          testName={currentQuestion.testName}
+                          subject={currentQuestion.subject}
+                          series_no={currentQuestion.series_no}
+                          questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                        />
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
+            );
+          }
+
+          // 動態決定要顯示的選項
+          const optionsToShow: Array<'A' | 'B' | 'C' | 'D' | 'E'> = [];
+          
+          // 檢查是否為是非題（C 和 D 都為空）
+          const isTrueFalse = !currentQuestion.C && !currentQuestion.D;
+          
+          // 總是顯示 A 和 B
+          if (currentQuestion.A) optionsToShow.push('A');
+          if (currentQuestion.B) optionsToShow.push('B');
+          
+          // 如果不是是非題，顯示 C 和 D（如果有內容）
+          if (!isTrueFalse) {
+            if (currentQuestion.C) optionsToShow.push('C');
+            if (currentQuestion.D) optionsToShow.push('D');
+          }
+          
+          // 如果有 E 選項（存在且不為空字串），顯示 E
+          if (currentQuestion.E && currentQuestion.E.trim() !== '') {
+            optionsToShow.push('E');
+          }
+          
+          return optionsToShow.map((option) => {
+            const optionText = currentQuestion[option] || '';
+            // 複選題使用 selectedAnswers，單選題使用 selectedAnswer
+            const isSelected = isMultipleChoice
+              ? selectedAnswers.includes(option)
+              : Boolean(selectedAnswer === option);
+            
+            // 檢查是否為正確選項（支援複選）
+            const correctAnswer = String(currentQuestion.Ans);
+            let isCorrectOption = false;
+            if (correctAnswer.includes(',')) {
+              const correctOptions = correctAnswer.split(',').map(a => a.trim());
+              isCorrectOption = correctOptions.includes(option);
+            } else {
+              isCorrectOption = option === correctAnswer;
+            }
+            
+            const showCorrect = Boolean(showResult && isCorrectOption);
+            const showWrong = Boolean(showResult && isSelected && !isCorrectOption);
+
+            return (
+              <TouchableOpacity
+                key={option}
+                style={[
+                  styles.optionButton,
+                  isSelected && styles.optionButtonSelected,
+                  showCorrect && styles.optionButtonCorrect,
+                  showWrong && styles.optionButtonWrong,
+                ]}
+                onPress={() => handleSelectAnswer(option)}
+                disabled={Boolean(showResult)}
+              >
+                <Text style={styles.optionLabel}>({option})</Text>
+                <View style={styles.optionContent}>
+                  <RichTextWithImages
+                    text={optionText}
+                    textStyle={styles.optionText}
+                    imageStyle={styles.optionImage}
+                    contextText={`${currentQuestion.content} ${optionText}`}
+                    testName={currentQuestion.testName}
+                    subject={currentQuestion.subject}
+                    series_no={currentQuestion.series_no}
+                    questionNumber={currentQuestion.questionNumber || (currentIndex + 1)}
+                    optionLabel={option}
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          });
+        })()}
+
+        {/* 複選題提交按鈕 - 僅在複選題且未顯示結果時顯示 */}
+        {isMultipleChoice && !showResult && selectedAnswers.length > 0 && (
+          <View style={styles.submitButtonContainer}>
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={handleSubmitAnswer}
+            >
+              <Text style={styles.submitButtonText}>
+                提交答案 ({selectedAnswers.length})
+              </Text>
             </TouchableOpacity>
-          );
-        })}
+          </View>
+        )}
 
         {/* 功能按鈕區域 */}
         {showResult && (
@@ -899,21 +1086,23 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     flex: 1,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    marginHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
+    minHeight: 54,
   },
   footerButtonNav: {
-    backgroundColor: '#007AFF',
+    flex: 0.8,
   },
   footerButtonYellow: {
     backgroundColor: '#FFC107',
   },
   footerButtonFavorite: {
-    flex: 0.8,
+    flex: 1.4,
   },
   footerButtonDisabled: {
     backgroundColor: '#CCCCCC',
@@ -925,7 +1114,29 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   footerButtonIconText: {
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  submitButtonContainer: {
+    marginTop: 16,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  submitButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#45a049',
+    minHeight: 48,
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
   },
   emptyContainer: {
     padding: 32,
@@ -934,6 +1145,69 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#999999',
+  },
+  essayQuestionContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  essayQuestionHint: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 16,
+    textAlign: 'left',
+    fontStyle: 'italic',
+  },
+  showAnswerButton: {
+    backgroundColor: '#FF9800',
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  showAnswerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  essayAnswerContainer: {
+    marginTop: 16,
+  },
+  essayAnswerSection: {
+    marginBottom: 16,
+  },
+  essayAnswerLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  essayAnswerText: {
+    fontSize: 16,
+    color: '#333333',
+    lineHeight: 24,
+  },
+  essayAnswerImage: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  essayExplanationSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  essayExplanationLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
   },
 });
 

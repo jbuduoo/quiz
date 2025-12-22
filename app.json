@@ -6,15 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-      "assetBundlePatterns": [
-        "**/*",
-        "assets/data/**/*.json",
-        "assets/data/questions/**/*.json",
-        "assets/config/**/*.json",
-        "assets/images/**/*.png",
-        "assets/images/**/*.jpg",
-        "assets/images/**/*.jpeg"
-      ],
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/*.png",
+      "assets/data/**/*.json",
+      "assets/data/questions/**/*.json",
+      "assets/config/**/*.json",
+      "assets/images/**/*.png",
+      "assets/images/**/*.jpg",
+      "assets/images/**/*.jpeg"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

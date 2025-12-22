@@ -10,9 +10,10 @@ import {
   Modal,
   Alert,
   TextInput,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../../App';
@@ -20,6 +21,9 @@ import { Question } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import QuestionService from '../services/QuestionService';
 import { ImportedQuestionData, parseSource, importQuestionFile, getImportedQuestionFiles, loadImportedQuestionFile, deleteImportedQuestionFile } from '../services/ImportService';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { loadLocalQuestionFile } from '../utils/fileLoader';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -53,12 +57,30 @@ const FileNameListScreen = () => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadData();
-    });
-    return unsubscribe;
-  }, [navigation]);
+  // 使用 useFocusEffect 確保每次頁面獲得焦點時都重新載入資料
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('📋 [FileNameListScreen] useFocusEffect 觸發，重新載入資料');
+      // 檢查是否有剛完成的測驗
+      const checkAndReload = async () => {
+        try {
+          const lastQuizInfo = await AsyncStorage.getItem('@quiz:lastCompletedQuiz');
+          if (lastQuizInfo) {
+            console.log('📋 [FileNameListScreen] 檢測到剛完成的測驗，重新載入資料');
+            const quizInfo = JSON.parse(lastQuizInfo);
+            console.log('📋 [FileNameListScreen] 測驗資訊:', quizInfo);
+            // 清除標記，避免重複觸發
+            await AsyncStorage.removeItem('@quiz:lastCompletedQuiz');
+          }
+        } catch (error) {
+          console.error('檢查最後完成的測驗失敗:', error);
+        }
+        // 重新載入資料
+        await loadData();
+      };
+      checkAndReload();
+    }, [])
+  );
 
   // 處理本地匯入
   const handleLocalImport = async () => {
@@ -114,8 +136,59 @@ const FileNameListScreen = () => {
         input.click();
       }
     } else {
-      // React Native 平台：顯示 URL 輸入 Modal
-      setShowUrlInputModal(true);
+      // React Native 平台（iOS/Android）：使用 expo-document-picker
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled) {
+          return; // 用戶取消選擇
+        }
+
+        const file = result.assets[0];
+        if (!file) {
+          return;
+        }
+
+        // 讀取檔案內容
+        // 在 React Native 平台，使用 FileSystem 讀取本地檔案
+        const text = await FileSystem.readAsStringAsync(file.uri);
+        let data = JSON.parse(text);
+        
+        // 處理兩種格式：
+        // 1. 數組格式：[{...}, {...}] -> 轉換為 ImportedQuestionData 格式
+        // 2. 對象格式：{importDate, source, questions: [...]}
+        if (Array.isArray(data)) {
+          data = {
+            source: file.name,
+            importDate: new Date().toISOString().split('T')[0],
+            questions: data,
+          } as ImportedQuestionData;
+        } else if (!data.questions) {
+          // 如果沒有 questions 欄位，假設整個物件就是題目數組
+          data = {
+            source: file.name,
+            importDate: new Date().toISOString().split('T')[0],
+            questions: Array.isArray(data) ? data : [],
+          } as ImportedQuestionData;
+        }
+        
+        // 確保有 source
+        if (!data.source) {
+          data.source = file.name;
+        }
+        
+        // 導航到匯入設定頁面
+        navigation.navigate('ImportConfig', {
+          questionData: data as ImportedQuestionData,
+          downloadUrl: file.name,
+        });
+      } catch (error) {
+        console.error('讀取檔案失敗:', error);
+        Alert.alert('錯誤', '無法讀取檔案，請確認檔案格式正確');
+      }
     }
   };
 
@@ -148,9 +221,29 @@ const FileNameListScreen = () => {
   };
 
   // 處理遠端網站匯入
-  const handleRemoteImport = () => {
+  const handleRemoteImport = async () => {
     setShowImportModal(false);
-    navigation.navigate('ImportWebView', {});
+    const url = 'https://drive.google.com/drive/folders/1uL6STVwEhZwdxNJCshQDz0dBj6MSsZEF?usp=sharing';
+    
+    try {
+      if (Platform.OS === 'web') {
+        // Web 平台：在新分頁打開
+        if (typeof window !== 'undefined') {
+          window.open(url, '_blank');
+        }
+      } else {
+        // 原生平台：使用 Linking 打開瀏覽器
+        const canOpen = await Linking.canOpenURL(url);
+        if (canOpen) {
+          await Linking.openURL(url);
+        } else {
+          Alert.alert('錯誤', '無法開啟瀏覽器');
+        }
+      }
+    } catch (error) {
+      console.error('開啟網頁失敗:', error);
+      Alert.alert('錯誤', '無法開啟網頁，請稍後再試');
+    }
   };
 
   const handleToggleSelect = (itemId: string) => {
@@ -241,22 +334,27 @@ const FileNameListScreen = () => {
         console.log(`📋 [FileNameListScreen] loadData: 處理本地檔案: ${exampleFileName}`);
         let fileData: any;
         
-        console.log(`📋 [FileNameListScreen] loadData: 使用 require 載入 example.json`);
+        console.log(`📋 [FileNameListScreen] loadData: 使用動態載入函數載入 ${exampleFileName}`);
         try {
-          fileData = require('../../assets/data/questions/example.json');
-          console.log(`✅ [FileNameListScreen] loadData: example.json 載入成功`, {
-            isArray: Array.isArray(fileData),
-            hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
-            type: typeof fileData,
-            length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
-          });
-        } catch (requireError) {
-          console.error(`❌ [FileNameListScreen] loadData: require example.json 失敗:`, requireError);
-          if (requireError instanceof Error) {
-            console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${requireError.message}`);
-            console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊:`, requireError.stack);
+          fileData = await loadLocalQuestionFile(exampleFileName);
+          if (fileData) {
+            console.log(`✅ [FileNameListScreen] loadData: ${exampleFileName} 載入成功`, {
+              isArray: Array.isArray(fileData),
+              hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
+              type: typeof fileData,
+              length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+            });
+          } else {
+            console.warn(`⚠️ [FileNameListScreen] loadData: ${exampleFileName} 載入失敗（檔案不存在或格式不正確）`);
+            throw new Error(`無法載入檔案: ${exampleFileName}`);
           }
-          throw requireError;
+        } catch (loadError) {
+          console.error(`❌ [FileNameListScreen] loadData: 載入 ${exampleFileName} 失敗:`, loadError);
+          if (loadError instanceof Error) {
+            console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${loadError.message}`);
+            console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊: ${loadError.stack}`);
+          }
+          throw loadError;
         }
         
         const displayName = '請由右上角匯入';
@@ -271,11 +369,21 @@ const FileNameListScreen = () => {
         questions.forEach((q: any, index: number) => {
           const questionId = `${exampleFileName}_${index + 1}`;
           const answer = userAnswers[questionId];
-          if (answer?.isAnswered && answer?.selectedAnswer !== undefined) {
+          // 只要 isAnswered 為 true 就算完成（包括問答題和未答被標記為錯誤的題目）
+          if (answer?.isAnswered) {
             completedCount++;
           }
         });
         console.log(`📋 [FileNameListScreen] loadData: ${exampleFileName} - 完成題數: ${completedCount}/${questions.length}`);
+        
+        const isCompleted = completedCount >= questions.length && questions.length > 0;
+        console.log(`📊 [FileNameListScreen] loadData: 本地檔案項目狀態`, {
+          fileName: exampleFileName,
+          fileCount: questions.length,
+          completedCount,
+          isCompleted,
+          shouldShowViewButton: isCompleted, // 本地檔案不是錯題本，所以直接檢查 isCompleted
+        });
         
         const fileItem = {
           id: exampleFileName,
@@ -308,11 +416,23 @@ const FileNameListScreen = () => {
           // 從檔案路徑提取資訊
           // 格式：questions/{testName}/{subject}/{series_no}.json 或 questions/{testName}/{series_no}.json
           const pathParts = filePath.replace(/^questions\//, '').split('/');
-          const testName = pathParts[0];
-          const series_no = pathParts.length === 2 
+          let testName = pathParts[0];
+          let series_no = pathParts.length === 2 
             ? pathParts[1].replace(/\.json$/, '')
             : pathParts[2]?.replace(/\.json$/, '') || '';
           const subject = pathParts.length === 3 ? pathParts[1] : undefined;
+          
+          // 移除時間戳（純數字部分）
+          // 如果 series_no 是純數字（時間戳），則不顯示它
+          // 如果 testName 末尾有時間戳格式（_數字），也移除
+          if (/^\d+$/.test(series_no)) {
+            // series_no 是純數字時間戳，不顯示
+            series_no = '';
+          }
+          
+          // 移除 testName 末尾的時間戳格式（_數字）
+          testName = testName.replace(/_\d+$/, '');
+          
           console.log(`📋 [FileNameListScreen] loadData: 解析路徑 - testName: ${testName}, subject: ${subject}, series_no: ${series_no}`);
           
           // 載入題目檔案
@@ -330,15 +450,48 @@ const FileNameListScreen = () => {
           let completedCount = 0;
           questions.forEach((q: Question) => {
             const answer = userAnswers[q.id];
-            if (answer?.isAnswered && answer?.selectedAnswer !== undefined) {
+            // 只要 isAnswered 為 true 就算完成（包括問答題和未答被標記為錯誤的題目）
+            if (answer?.isAnswered) {
               completedCount++;
             }
           });
           
-          // 生成顯示名稱
-          const displayName = subject 
-            ? `${testName}_${subject}_${series_no}`
-            : `${testName}_${series_no}`;
+          console.log(`📊 [FileNameListScreen] loadData: 計算完成題數`, {
+            filePath,
+            testName,
+            subject,
+            series_no,
+            totalQuestions: questions.length,
+            completedCount,
+            sampleQuestionIds: questions.slice(0, 3).map(q => q.id),
+            sampleAnswers: questions.slice(0, 3).map(q => ({
+              questionId: q.id,
+              answer: userAnswers[q.id],
+              isAnswered: userAnswers[q.id]?.isAnswered,
+              selectedAnswer: userAnswers[q.id]?.selectedAnswer,
+            })),
+          });
+          
+          // 生成顯示名稱（移除時間戳後）
+          let displayName = '';
+          if (subject) {
+            displayName = series_no 
+              ? `${testName}_${subject}_${series_no}`
+              : `${testName}_${subject}`;
+          } else {
+            displayName = series_no 
+              ? `${testName}_${series_no}`
+              : testName;
+          }
+          
+          const isCompleted = completedCount >= questions.length && questions.length > 0;
+          console.log(`📊 [FileNameListScreen] loadData: 檔案項目狀態`, {
+            displayName,
+            fileCount: questions.length,
+            completedCount,
+            isCompleted,
+            shouldShowViewButton: isCompleted, // 匯入檔案不是錯題本，所以直接檢查 isCompleted
+          });
           
           fileItems.push({
             id: filePath,
@@ -398,12 +551,23 @@ const FileNameListScreen = () => {
       }
       
       try {
+        console.log(`🔵 [FileNameListScreen] handlePress: 開始處理`, {
+          fileName: item.fileName,
+          displayName: item.displayName,
+          isWrongBook: item.isWrongBook,
+          completedCount: item.completedCount,
+          fileCount: item.fileCount,
+        });
+        
         // 如果是錯題本，導航到錯題本頁面
         if (item.isWrongBook) {
+          console.log(`📚 [FileNameListScreen] handlePress: 處理錯題本`);
           // 如果是「開始測驗」，先清除錯題本的答題記錄
           const isStartTest = true; // 錯題本固定顯示「開始測驗」
           if (isStartTest) {
+            console.log(`🔄 [FileNameListScreen] handlePress: 清空錯題本答題記錄`);
             await QuestionService.clearWrongBookAnswers();
+            console.log(`✅ [FileNameListScreen] handlePress: 錯題本答題記錄已清空`);
           }
           navigation.navigate('WrongBook');
           return;
@@ -412,10 +576,96 @@ const FileNameListScreen = () => {
         // 判斷按鈕文字：開始測驗、繼續測驗、重新測驗
         const isCompleted = (item.completedCount || 0) >= item.fileCount && item.fileCount > 0;
         const isStartTest = !isCompleted && (!item.completedCount || item.completedCount === 0);
+        const buttonText = isCompleted ? '重新測驗' : (isStartTest ? '開始測驗' : '繼續測驗');
         
-        // 如果是「開始測驗」，先清除該檔案的答題記錄
-        if (isStartTest) {
-          await QuestionService.clearFileAnswers(item.fileName);
+        console.log(`📊 [FileNameListScreen] handlePress: 按鈕狀態判斷`, {
+          completedCount: item.completedCount,
+          fileCount: item.fileCount,
+          isCompleted,
+          isStartTest,
+          buttonText,
+        });
+        
+        // 如果是「開始測驗」或「重新測驗」，先清除該檔案的答題記錄（重頭開始）
+        if (isStartTest || isCompleted) {
+          console.log(`🔄 [FileNameListScreen] handlePress: 準備清空答題記錄`, {
+            fileName: item.fileName,
+            reason: isStartTest ? '開始測驗' : '重新測驗',
+          });
+          
+          // 清空前，先檢查當前的答題記錄狀態
+          const userAnswersBefore = await QuestionService.getUserAnswers();
+          
+          // 對於匯入的檔案，需要載入題目來獲取實際的題目 ID
+          let questionIdsBefore: string[] = [];
+          if (item.fileName.startsWith('questions/')) {
+            // 匯入的檔案：載入題目以獲取實際的題目 ID
+            console.log(`📂 [FileNameListScreen] handlePress: 匯入檔案，載入題目以獲取 ID`);
+            const questions = await loadImportedQuestionFile(item.fileName);
+            questionIdsBefore = questions.map(q => q.id).filter(id => userAnswersBefore[id]);
+            console.log(`📋 [FileNameListScreen] handlePress: 從題目載入的 ID`, {
+              questionCount: questions.length,
+              matchedIds: questionIdsBefore.length,
+              questionIds: questionIdsBefore.slice(0, 5),
+            });
+          } else {
+            // 本地打包的檔案：使用檔案名稱匹配
+            questionIdsBefore = Object.keys(userAnswersBefore).filter(id => id.startsWith(`${item.fileName}_`));
+          }
+          
+          // 檢查所有題目 ID 的格式，以便除錯
+          const allQuestionIds = Object.keys(userAnswersBefore);
+          const sampleQuestionIds = allQuestionIds.slice(0, 10);
+          console.log(`📋 [FileNameListScreen] handlePress: 清空前的答題記錄`, {
+            fileName: item.fileName,
+            searchPattern: item.fileName.startsWith('questions/') ? '使用題目 ID 匹配' : `${item.fileName}_`,
+            totalAnswers: Object.keys(userAnswersBefore).length,
+            fileAnswers: questionIdsBefore.length,
+            sampleQuestionIds,
+            questionIdsBefore: questionIdsBefore.slice(0, 5),
+            sampleAnswer: questionIdsBefore.length > 0 ? userAnswersBefore[questionIdsBefore[0]] : null,
+          });
+          
+          console.log(`🔄 [FileNameListScreen] handlePress: 開始執行清空操作`);
+          try {
+            await QuestionService.clearFileAnswers(item.fileName);
+            console.log(`✅ [FileNameListScreen] handlePress: 答題記錄已清空`);
+            
+            // 清空後，檢查答題記錄狀態
+            const userAnswersAfter = await QuestionService.getUserAnswers();
+            
+            // 使用相同的邏輯來檢查清空後的狀態
+            let questionIdsAfter: string[] = [];
+            if (item.fileName.startsWith('questions/')) {
+              // 匯入的檔案：使用之前載入的題目 ID
+              const questions = await loadImportedQuestionFile(item.fileName);
+              questionIdsAfter = questions.map(q => q.id).filter(id => userAnswersAfter[id]);
+            } else {
+              // 本地打包的檔案：使用檔案名稱匹配
+              questionIdsAfter = Object.keys(userAnswersAfter).filter(id => id.startsWith(`${item.fileName}_`));
+            }
+            
+            console.log(`📋 [FileNameListScreen] handlePress: 清空後的答題記錄`, {
+              totalAnswers: Object.keys(userAnswersAfter).length,
+              fileAnswers: questionIdsAfter.length,
+              sampleAnswer: questionIdsAfter.length > 0 ? userAnswersAfter[questionIdsAfter[0]] : null,
+            });
+            
+            // 更新進度以反映清空後的狀態
+            console.log(`🔄 [FileNameListScreen] handlePress: 更新進度統計`);
+            await QuestionService.updateProgress();
+            console.log(`✅ [FileNameListScreen] handlePress: 進度統計已更新`);
+          } catch (clearError) {
+            console.error(`❌ [FileNameListScreen] handlePress: 清空答題記錄失敗`, clearError);
+            if (clearError instanceof Error) {
+              console.error(`❌ [FileNameListScreen] handlePress: 錯誤訊息`, clearError.message);
+              console.error(`❌ [FileNameListScreen] handlePress: 錯誤堆疊`, clearError.stack);
+            }
+            // 即使清空失敗，也繼續執行，讓用戶可以開始測驗
+            console.log(`⚠️ [FileNameListScreen] handlePress: 清空失敗，但繼續執行測驗流程`);
+          }
+        } else {
+          console.log(`ℹ️ [FileNameListScreen] handlePress: 繼續測驗模式，不清空答題記錄`);
         }
         
         let questions: Question[] = [];
@@ -428,31 +678,29 @@ const FileNameListScreen = () => {
           questions = await loadImportedQuestionFile(item.fileName);
           console.log(`✅ [FileNameListScreen] handlePress: 載入完成，題數: ${questions.length}`);
         } else {
-          // 本地打包的檔案：使用 require
-          console.log(`📋 [FileNameListScreen] handlePress: 使用 require 載入本地檔案: ${item.fileName}`);
+          // 本地打包的檔案：使用動態載入函數
+          console.log(`📋 [FileNameListScreen] handlePress: 使用動態載入函數載入本地檔案: ${item.fileName}`);
           let fileData: any;
           
-          if (item.fileName === 'example.json') {
-            console.log(`📋 [FileNameListScreen] handlePress: require example.json`);
-            try {
-              fileData = require('../../assets/data/questions/example.json');
-              console.log(`✅ [FileNameListScreen] handlePress: example.json 載入成功`, {
+          // 支援所有符合格式的檔案
+          try {
+              fileData = await loadLocalQuestionFile(item.fileName);
+              if (!fileData) {
+                throw new Error(`無法載入檔案: ${item.fileName}`);
+              }
+              console.log(`✅ [FileNameListScreen] handlePress: ${item.fileName} 載入成功`, {
                 isArray: Array.isArray(fileData),
                 type: typeof fileData,
                 length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
               });
-            } catch (requireError) {
-              console.error(`❌ [FileNameListScreen] handlePress: require example.json 失敗:`, requireError);
-              if (requireError instanceof Error) {
-                console.error(`❌ [FileNameListScreen] handlePress: 錯誤訊息: ${requireError.message}`);
-                console.error(`❌ [FileNameListScreen] handlePress: 錯誤堆疊:`, requireError.stack);
+            } catch (loadError) {
+              console.error(`❌ [FileNameListScreen] handlePress: 載入 ${item.fileName} 失敗:`, loadError);
+              if (loadError instanceof Error) {
+                console.error(`❌ [FileNameListScreen] handlePress: 錯誤訊息: ${loadError.message}`);
+                console.error(`❌ [FileNameListScreen] handlePress: 錯誤堆疊:`, loadError.stack);
               }
-              throw requireError;
+              throw loadError;
             }
-          } else {
-            console.error(`❌ [FileNameListScreen] handlePress: 不支援的檔案: ${item.fileName}`);
-            throw new Error(`不支援的檔案: ${item.fileName}`);
-          }
           
           // 處理兩種格式：
           // 1. 數組格式：[{...}, {...}]
@@ -461,18 +709,29 @@ const FileNameListScreen = () => {
           const questionsData = isArray ? fileData : (fileData.questions || []);
           console.log(`📋 [FileNameListScreen] handlePress: 解析題目資料 - isArray: ${isArray}, 題數: ${questionsData.length}`);
           
-          // 標準化題目格式
-          questions = questionsData.map((q: any, index: number) => ({
-            id: `${item.fileName}_${index + 1}`,
-            content: String(q.Q || q.content || ''),
-            A: String(q.A || q.options?.A || ''),
-            B: String(q.B || q.options?.B || ''),
-            C: String(q.C || q.options?.C || ''),
-            D: String(q.D || q.options?.D || ''),
-            Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
-            exp: String(q.Exp || q.exp || q.explanation || ''),
-            questionNumber: index + 1,
-          }));
+          // 標準化題目格式（與 QuizScreen 保持一致）
+          questions = questionsData.map((q: any, index: number) => {
+            // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+            let EValue: string | undefined = undefined;
+            if (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') {
+              EValue = String(q.E);
+            } else if (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '') {
+              EValue = String(q.options.E);
+            }
+            
+            return {
+              id: `${item.fileName}_${index + 1}`,
+              content: String(q.Q || q.content || ''),
+              A: String(q.A || q.options?.A || ''),
+              B: String(q.B || q.options?.B || ''),
+              C: String(q.C || q.options?.C || ''),
+              D: String(q.D || q.options?.D || ''),
+              E: EValue,
+              Ans: String(q.Ans || q.correctAnswer || 'A'),
+              exp: String(q.Exp || q.exp || q.explanation || ''),
+              questionNumber: index + 1,
+            };
+          });
           console.log(`✅ [FileNameListScreen] handlePress: 標準化完成，題數: ${questions.length}`);
         }
         
@@ -482,17 +741,42 @@ const FileNameListScreen = () => {
         }
         
         // 將題目資料存儲到 AsyncStorage，供 Quiz 頁面讀取
+        console.log(`💾 [FileNameListScreen] handlePress: 儲存題目到 AsyncStorage`, {
+          questionCount: questions.length,
+          fileName: item.fileName,
+        });
         await AsyncStorage.setItem('@quiz:directQuestions', JSON.stringify(questions));
+        console.log(`✅ [FileNameListScreen] handlePress: 題目已儲存到 AsyncStorage`);
         
         // 導航到題目頁，使用 directFileName 參數標識這是直接載入的檔案
+        console.log(`🚀 [FileNameListScreen] handlePress: 準備導航到測驗頁面`, {
+          testName: 'DIRECT_FILE',
+          subject: '',
+          series_no: item.fileName,
+          directFileName: item.fileName,
+        });
+        
         navigation.navigate('Quiz', {
           testName: 'DIRECT_FILE',
           subject: '',
           series_no: item.fileName,
           directFileName: item.fileName,
         });
+        
+        console.log(`✅ [FileNameListScreen] handlePress: 已導航到測驗頁面`);
+        console.log(`🎉 [FileNameListScreen] handlePress: 已完成 - 重新測驗流程執行完畢`, {
+          fileName: item.fileName,
+          displayName: item.displayName,
+          questionCount: questions.length,
+          isCompleted,
+          isStartTest,
+        });
       } catch (error) {
-        console.error('載入檔案失敗:', error);
+        console.error(`❌ [FileNameListScreen] handlePress: 載入檔案失敗`, error);
+        if (error instanceof Error) {
+          console.error(`❌ [FileNameListScreen] handlePress: 錯誤訊息`, error.message);
+          console.error(`❌ [FileNameListScreen] handlePress: 錯誤堆疊`, error.stack);
+        }
         Alert.alert('錯誤', '載入檔案失敗，請稍後再試');
       }
     };
@@ -501,6 +785,88 @@ const FileNameListScreen = () => {
       ? Math.round((item.completedCount || 0) / item.fileCount * 100) 
       : 0;
     const isCompleted = (item.completedCount || 0) >= item.fileCount && item.fileCount > 0;
+    const isInProgress = (item.completedCount || 0) > 0 && !isCompleted;
+    // 只有完成測驗的才顯示檢視按鈕
+    const shouldShowViewButton = !item.isWrongBook && isCompleted;
+    
+    const handleViewPress = async () => {
+      try {
+        let questions: Question[] = [];
+        
+        // 判斷是匯入的檔案還是本地打包的檔案
+        if (item.fileName.startsWith('questions/')) {
+          // 匯入的檔案：從 AsyncStorage 讀取
+          questions = await loadImportedQuestionFile(item.fileName);
+        } else {
+          // 本地打包的檔案：使用動態載入函數
+          let fileData: any;
+          
+          try {
+            fileData = await loadLocalQuestionFile(item.fileName);
+            if (!fileData) {
+              console.error(`❌ [FileNameListScreen] handleViewPress: ${item.fileName} 載入失敗（檔案不存在或格式不正確）`);
+              Alert.alert('錯誤', `無法載入檔案: ${item.fileName}`);
+              return;
+            }
+          } catch (loadError) {
+            console.error(`❌ [FileNameListScreen] handleViewPress: 載入 ${item.fileName} 失敗:`, loadError);
+            Alert.alert('錯誤', `無法載入題目資料: ${loadError instanceof Error ? loadError.message : '未知錯誤'}`);
+            return;
+          }
+          
+          // 處理兩種格式
+          const isArray = Array.isArray(fileData);
+          const questionsData = isArray ? fileData : (fileData.questions || []);
+          
+          // 標準化題目格式（與 QuizScreen 保持一致）
+          questions = questionsData.map((q: any, index: number) => {
+            // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+            let EValue: string | undefined = undefined;
+            if (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') {
+              EValue = String(q.E);
+            } else if (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '') {
+              EValue = String(q.options.E);
+            }
+            
+            return {
+              id: `${item.fileName}_${index + 1}`,
+              content: String(q.Q || q.content || ''),
+              A: String(q.A || q.options?.A || ''),
+              B: String(q.B || q.options?.B || ''),
+              C: String(q.C || q.options?.C || ''),
+              D: String(q.D || q.options?.D || ''),
+              E: EValue,
+              Ans: String(q.Ans || q.correctAnswer || 'A'),
+              exp: String(q.Exp || q.exp || q.explanation || ''),
+              questionNumber: index + 1,
+            };
+          });
+        }
+        
+        if (questions.length === 0) {
+          Alert.alert('錯誤', '沒有題目可檢視');
+          return;
+        }
+        
+        const questionIds = questions.map(q => q.id);
+        
+        console.log('📋 [FileNameListScreen] handleViewPress: 準備導航到檢視畫面', {
+          questionCount: questions.length,
+          questionIds: questionIds.slice(0, 3),
+          fileName: item.fileName,
+        });
+        
+        // 導航到檢視畫面（傳遞題目資料，避免從 getAllQuestions 中查找）
+        navigation.navigate('ReviewQuiz', {
+          questionId: questionIds[0],
+          questionIds: questionIds,
+          questions: questions, // 直接傳遞題目資料
+        });
+      } catch (error) {
+        console.error('檢視題目失敗:', error);
+        Alert.alert('錯誤', '檢視題目失敗，請稍後再試');
+      }
+    };
 
     const isHovered = hoveredItem === item.id;
     
@@ -605,37 +971,126 @@ const FileNameListScreen = () => {
           
           {/* 右側：按鈕 */}
           {!isDeleteMode && (
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                { 
-                  backgroundColor: colors.primary,
-                  // 安卓和 iOS 平台：按鈕大小為 80%
-                  ...(Platform.OS !== 'web' ? {
-                    paddingHorizontal: 24 * 0.8,
-                    paddingVertical: 14.4 * 0.8,
-                    borderRadius: 7.2 * 0.8,
-                    minWidth: 120 * 0.8,
-                    minHeight: 52.8 * 0.8,
-                  } : {}),
-                },
-              ]}
-              onPress={handlePress}
-            >
-              <Text
+            <View style={styles.buttonContainer}>
+              {shouldShowViewButton && (
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    styles.viewButton,
+                    {
+                      backgroundColor: '#4CAF50',
+                      borderColor: '#4CAF50',
+                      borderWidth: 1,
+                      // 安卓和 iOS 平台：按鈕大小為 80%
+                      ...(Platform.OS !== 'web' ? {
+                        paddingHorizontal: 12 * 0.8,
+                        paddingVertical: 8 * 0.8,
+                        borderRadius: 7.2 * 0.8,
+                        minWidth: 0,
+                        minHeight: 50 * 0.8,
+                      } : {
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        minWidth: 0,
+                        minHeight: 50,
+                      }),
+                    },
+                  ]}
+                  onPress={handleViewPress}
+                >
+                  {Platform.OS === 'web' ? (
+                    <View style={{
+                      height: textSizeValue * 1.2 * 1.3 * 2,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      width: '100%',
+                    }}>
+                      <Text
+                        style={[
+                          styles.actionButtonText,
+                          {
+                            color: '#FFFFFF',
+                            fontWeight: '600',
+                            fontSize: textSizeValue * 1.2,
+                            textAlign: 'center',
+                            lineHeight: textSizeValue * 1.2 * 1.3,
+                            includeFontPadding: false,
+                          },
+                        ]}
+                      >
+                        檢視
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{
+                      height: textSizeValue * 1.2 * 0.8 * 1.3 * 2,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      width: '100%',
+                    }}>
+                      <Text
+                        style={[
+                          styles.actionButtonText,
+                          {
+                            color: '#FFFFFF',
+                            fontWeight: '600',
+                            fontSize: textSizeValue * 1.2 * 0.8,
+                            textAlign: 'center',
+                            lineHeight: textSizeValue * 1.2 * 0.8 * 1.3,
+                            includeFontPadding: false,
+                          },
+                        ]}
+                      >
+                        檢視
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
                 style={[
-                  styles.actionButtonText,
-                  {
-                    color: '#FFFFFF',
-                    fontSize: Platform.OS !== 'web' 
-                      ? textSizeValue * 1.2 * 0.8 
-                      : textSizeValue * 1.2,
+                  styles.actionButton,
+                  { 
+                    backgroundColor: colors.primary,
+                    // 安卓和 iOS 平台：按鈕大小為 80%
+                    ...(Platform.OS !== 'web' ? {
+                      paddingHorizontal: 12 * 0.8,
+                      paddingVertical: 8 * 0.8,
+                      borderRadius: 7.2 * 0.8,
+                      minWidth: 60 * 0.8,
+                      minHeight: 50 * 0.8,
+                    } : {
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      minWidth: 60,
+                      minHeight: 50,
+                    }),
                   },
                 ]}
+                onPress={handlePress}
               >
-                {item.isWrongBook ? '開始測驗' : (isCompleted ? '重新測驗' : (item.completedCount && item.completedCount > 0 ? '繼續測驗' : '開始測驗'))}
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.actionButtonText,
+                    {
+                      color: '#FFFFFF',
+                      fontSize: Platform.OS !== 'web' 
+                        ? textSizeValue * 1.2 * 0.8 
+                        : textSizeValue * 1.2,
+                      textAlign: 'center',
+                      lineHeight: Platform.OS !== 'web' 
+                        ? textSizeValue * 1.2 * 0.8 * 1.3 
+                        : textSizeValue * 1.2 * 1.3,
+                      includeFontPadding: false,
+                      width: Platform.OS !== 'web' ? 48 : 60,
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {item.isWrongBook ? '開始\n測驗' : (isCompleted ? '重新\n測驗' : (item.completedCount && item.completedCount > 0 ? '繼續\n測驗' : '開始\n測驗'))}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </TouchableOpacity>
@@ -701,13 +1156,8 @@ const FileNameListScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  // Android 平台：直接跳轉到遠端網站匯入
-                  if (Platform.OS === 'android') {
-                    handleRemoteImport();
-                  } else {
-                    // 其他平台：顯示匯入選項 Modal
-                    setShowImportModal(true);
-                  }
+                  // 所有平台：顯示匯入選項 Modal（包含本地匯入和遠端網站匯入）
+                  setShowImportModal(true);
                 }}
                 style={styles.headerButton}
               >
@@ -800,18 +1250,17 @@ const FileNameListScreen = () => {
               選擇匯入方式
             </Text>
 
-            {/* 在 Android 上隱藏本地匯入選項 */}
-            {Platform.OS !== 'android' && (
-              <TouchableOpacity
-                style={[
-                  styles.modalOption,
-                  {
-                    backgroundColor: colors.background,
-                    borderColor: colors.border,
-                  },
-                ]}
-                onPress={handleLocalImport}
-              >
+            {/* 本地匯入選項 - 所有平台都顯示 */}
+            <TouchableOpacity
+              style={[
+                styles.modalOption,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={handleLocalImport}
+            >
               <Text
                 style={[
                   styles.modalOptionIcon,
@@ -845,8 +1294,8 @@ const FileNameListScreen = () => {
                 </Text>
               </View>
             </TouchableOpacity>
-            )}
 
+            {/* 遠端網站匯入選項 */}
             <TouchableOpacity
               style={[
                 styles.modalOption,
@@ -1130,11 +1579,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
+    width: '100%',
   },
   fileNameContainer: {
     flex: 1,
     marginRight: 8,
     flexDirection: 'column',
+    flexShrink: 1,
+    minWidth: 0,
   },
   titleRow: {
     flexDirection: 'row',
@@ -1176,17 +1628,28 @@ const styles = StyleSheet.create({
   progressText: {
     fontWeight: '400',
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexShrink: 0,
+    marginLeft: 8,
+  },
   actionButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 14.4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 7.2,
-    minWidth: 120,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
     alignSelf: 'center',
-    minHeight: 52.8,
+    minHeight: 0,
+  },
+  viewButton: {
+    // 檢視按鈕的特殊樣式（綠色背景）
   },
   actionButtonText: {
     fontWeight: '600',

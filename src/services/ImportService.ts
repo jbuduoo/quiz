@@ -17,6 +17,7 @@ export interface ImportedQuestionData {
     B?: string;
     C?: string;
     D?: string;
+    E?: string;  // 複選題的 E 選項
     Ans?: string;
     Exp?: string;
     // 舊格式支援
@@ -27,6 +28,7 @@ export interface ImportedQuestionData {
       B?: string;
       C?: string;
       D?: string;
+      E?: string;  // 複選題的 E 選項
     };
     correctAnswer?: string;
     exp?: string;
@@ -110,6 +112,14 @@ function normalizeQuestion(
   const rawContent = String(q.Q || q.content || '');
   const cleanedContent = removeQuestionNumberPrefix(rawContent);
 
+  // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
+  // 與 QuestionService.ts 中的邏輯保持一致
+  const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+    ? String(q.E) 
+    : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+      ? String(q.options.E)
+      : undefined;
+
   return {
     id: questionId,
     content: cleanedContent,
@@ -117,7 +127,8 @@ function normalizeQuestion(
     B: String(q.B || q.options?.B || ''),
     C: String(q.C || q.options?.C || ''),
     D: String(q.D || q.options?.D || ''),
-    Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D',
+    E: EValue,  // 處理 E 選項（用於複選題）
+    Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
     exp: String(q.Exp || q.exp || q.explanation || ''),
     questionNumber: index + 1,
     testName,
@@ -219,10 +230,13 @@ export async function importQuestionFile(
       : `questions/${testName}/${series_no}.json`;
 
     // 建立題目檔案資料
+    // 保存原始資料以便未來重新標準化（例如修復 E 選項問題）
     const questionFileData = {
       importDate: (data && typeof data === 'object' && !Array.isArray(data) ? data.importDate : undefined) || new Date().toISOString().split('T')[0],
       source: (data && typeof data === 'object' && !Array.isArray(data) ? data.source : undefined) || '',
       questions: normalizedQuestions,
+      // 保存原始資料以便未來重新標準化
+      rawQuestions: questions,
     };
 
     // 保存到 AsyncStorage（使用檔案路徑作為 key）
@@ -352,7 +366,31 @@ export async function getImportedQuestionFiles(): Promise<string[]> {
 }
 
 /**
+ * 從檔案路徑解析 testName, subject, series_no（用於匯入的檔案）
+ */
+function parseImportedFilePath(filePath: string): { testName: string; subject: string | null; series_no: string } | null {
+  // 新格式: questions/IPAS_01/L11/11401.json (三層結構)
+  // 新格式: questions/NEW_CERT/20251216.json (兩層結構，沒有 subject)
+  if (filePath.startsWith('questions/')) {
+    const parts = filePath.replace(/^questions\//, '').split('/');
+    if (parts.length === 3) {
+      // 三層結構: testName/subject/series_no.json
+      const [testName, subject, seriesFile] = parts;
+      const series_no = seriesFile.replace(/\.json$/, '');
+      return { testName, subject, series_no };
+    } else if (parts.length === 2) {
+      // 兩層結構: testName/series_no.json
+      const [testName, seriesFile] = parts;
+      const series_no = seriesFile.replace(/\.json$/, '');
+      return { testName, subject: null, series_no };
+    }
+  }
+  return null;
+}
+
+/**
  * 載入匯入的題目檔案
+ * 如果題目缺少 E 選項，會嘗試從原始資料重新標準化
  */
 export async function loadImportedQuestionFile(filePath: string): Promise<Question[]> {
   try {
@@ -361,7 +399,52 @@ export async function loadImportedQuestionFile(filePath: string): Promise<Questi
       return [];
     }
     const questionFileData = JSON.parse(data);
-    return questionFileData.questions || [];
+    let questions: Question[] = questionFileData.questions || [];
+    
+    // 檢查是否有題目缺少 E 選項但應該有（例如複選題）
+    // 如果題目已經標準化過，就不需要重新處理
+    // 但如果是在修復之前匯入的，可能需要重新標準化
+    
+    // 檢查是否有題目缺少 E 選項
+    const needsNormalization = questions.some(q => {
+      // 如果答案是複選題（包含逗號），但沒有 E 選項，可能需要檢查
+      const ans = String(q.Ans || '');
+      const isMultiple = ans.includes(',');
+      // 如果答案是複選題且包含 E，但題目沒有 E 選項，需要重新標準化
+      if (isMultiple && ans.includes('E') && (!q.E || q.E.trim() === '')) {
+        return true;
+      }
+      return false;
+    });
+    
+    // 如果需要重新標準化，且有原始資料，從原始資料重新標準化
+    if (needsNormalization && questionFileData.rawQuestions) {
+      const pathInfo = parseImportedFilePath(filePath);
+      if (pathInfo) {
+        const { testName, subject, series_no } = pathInfo;
+        console.log(`🔄 [loadImportedQuestionFile] 檢測到題目缺少 E 選項，從原始資料重新標準化: ${filePath}`);
+        
+        // 從原始資料重新標準化
+        const rawQuestions = questionFileData.rawQuestions;
+        questions = rawQuestions.map((q: any, index: number) =>
+          normalizeQuestion(q, index, testName, subject, series_no)
+        );
+        
+        // 更新儲存的資料
+        const updatedQuestionFileData = {
+          ...questionFileData,
+          questions: questions,
+        };
+        await AsyncStorage.setItem(
+          `${IMPORTED_QUESTIONS_KEY}:${filePath}`,
+          JSON.stringify(updatedQuestionFileData)
+        );
+        
+        console.log(`✅ [loadImportedQuestionFile] 重新標準化完成，已更新儲存的資料`);
+      }
+    }
+    
+    return questions;
   } catch (error) {
     console.error('載入匯入題庫檔案失敗:', error);
     return [];

@@ -11,6 +11,8 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp as RNRouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -151,15 +153,57 @@ const ImportConfigScreen = () => {
         input.click();
       }
     } else {
-      // React Native 平台：這個功能不應該在 React Native 平台顯示
-      // 如果用戶看到這個提示，說明功能顯示邏輯有問題
-      console.warn('⚠️ [ImportConfigScreen] handleLocalImport 在 React Native 平台被調用，這不應該發生');
-      // 提供替代方案：引導用戶使用 URL 匯入或遠端網站匯入
-      Alert.alert(
-        '提示',
-        '請使用以下方式匯入題庫：\n\n1. 點擊「遠端網站匯入」在題庫網站中下載\n2. 或使用「URL 匯入」直接輸入檔案網址',
-        [{ text: '確定' }]
-      );
+      // React Native 平台（iOS/Android）：使用 expo-document-picker
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled) {
+          return; // 用戶取消選擇
+        }
+
+        const file = result.assets[0];
+        if (!file) {
+          return;
+        }
+
+        // 讀取檔案內容
+        // 在 React Native 平台，使用 FileSystem 讀取本地檔案
+        const text = await FileSystem.readAsStringAsync(file.uri);
+        let data = JSON.parse(text);
+        
+        // 處理兩種格式：
+        // 1. 數組格式：[{...}, {...}] -> 轉換為 ImportedQuestionData 格式
+        // 2. 對象格式：{importDate, source, questions: [...]}
+        if (Array.isArray(data)) {
+          data = {
+            source: file.name,
+            importDate: new Date().toISOString().split('T')[0],
+            questions: data,
+          } as ImportedQuestionData;
+        } else if (!data.questions) {
+          // 如果沒有 questions 欄位，假設整個物件就是題目數組
+          data = {
+            source: file.name,
+            importDate: new Date().toISOString().split('T')[0],
+            questions: Array.isArray(data) ? data : [],
+          } as ImportedQuestionData;
+        }
+        
+        // 確保有 source
+        if (!data.source) {
+          data.source = file.name;
+        }
+        
+        // 更新狀態
+        setQuestionData(data as ImportedQuestionData);
+        setDownloadUrl(file.name);
+      } catch (error) {
+        console.error('讀取檔案失敗:', error);
+        Alert.alert('錯誤', '無法讀取檔案，請確認檔案格式正確');
+      }
     }
   };
 
@@ -200,8 +244,7 @@ const ImportConfigScreen = () => {
           {
             text: '確定',
             onPress: () => {
-              navigation.goBack();
-              navigation.goBack(); // 返回兩層（ImportConfig -> ImportWebView -> 上一頁）
+              navigation.goBack(); // 返回上一頁
             },
           },
         ]
@@ -249,8 +292,9 @@ const ImportConfigScreen = () => {
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
       >
-        {/* 題庫資訊 */}
+        {/* 合併的區塊：題庫資訊、匯入名稱、題目預覽 */}
         <View style={[styles.section, { backgroundColor: colors.surface }]}>
+          {/* 題庫資訊 */}
           <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
             題庫資訊
           </Text>
@@ -283,36 +327,21 @@ const ImportConfigScreen = () => {
                   匯入日期：{questionData.importDate}
                 </Text>
               )}
-              <TouchableOpacity
-                style={[styles.changeFileButton, { borderColor: colors.primary }]}
-                onPress={handleLocalImport}
-              >
-                <Text style={[styles.changeFileButtonText, { color: colors.primary, fontSize: textSizeValue }]}>
-                  📁 更換檔案
-                </Text>
-              </TouchableOpacity>
             </>
           )}
-        </View>
 
-        {/* 匯入名稱 */}
-        <View style={[styles.section, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
+          {/* 匯入名稱 */}
+          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2, marginTop: 16 }]}>
             匯入名稱
           </Text>
-
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text, fontSize: textSizeValue }]}>
-              匯入名稱 *
-            </Text>
             <TextInput
               style={[
                 styles.input,
                 {
-                  backgroundColor: '#E3F2FD', // 淺藍色背景，提示可編輯
+                  backgroundColor: colors.background,
                   color: colors.text,
-                  borderColor: '#2196F3', // 藍色邊框，更明顯
-                  borderWidth: 2,
+                  borderColor: colors.border,
                   fontSize: textSizeValue,
                 },
               ]}
@@ -322,74 +351,74 @@ const ImportConfigScreen = () => {
               placeholderTextColor={colors.textSecondary}
             />
           </View>
-        </View>
 
-        {/* 題目預覽 */}
-        {questionData && previewQuestions.length > 0 && (
-          <View style={[styles.section, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2 }]}>
-              題目預覽（前 3 題）
-            </Text>
-            {previewQuestions.map((q: any, index: number) => (
-              <View key={index} style={styles.previewItem}>
-                <Text style={[styles.previewQuestionNumber, { color: colors.primary, fontSize: textSizeValue }]}>
-                  第 {index + 1} 題
-                </Text>
-                <Text
-                  style={[styles.previewQuestion, { color: colors.text, fontSize: textSizeValue, marginBottom: 8 }]}
-                >
-                  {q.Q || q.content || '無題目內容'}
-                </Text>
-                {/* 顯示選項 */}
-                {q.A && (
-                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                    A. {q.A}
+          {/* 題目預覽 */}
+          {questionData && previewQuestions.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { color: colors.text, fontSize: textSizeValue + 2, marginTop: 16 }]}>
+                題目預覽（前 3 題）
+              </Text>
+              {previewQuestions.map((q: any, index: number) => (
+                <View key={index} style={styles.previewItem}>
+                  <Text style={[styles.previewQuestionNumber, { color: colors.primary, fontSize: textSizeValue }]}>
+                    第 {index + 1} 題
                   </Text>
-                )}
-                {q.B && (
-                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                    B. {q.B}
+                  <Text
+                    style={[styles.previewQuestion, { color: colors.text, fontSize: textSizeValue, marginBottom: 8 }]}
+                  >
+                    {q.Q || q.content || '無題目內容'}
                   </Text>
-                )}
-                {q.C && (
-                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                    C. {q.C}
-                  </Text>
-                )}
-                {q.D && (
-                  <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                    D. {q.D}
-                  </Text>
-                )}
-                {/* 如果沒有 A, B, C, D，嘗試從 options 讀取 */}
-                {!q.A && q.options && (
-                  <>
-                    {q.options.A && (
-                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                        A. {q.options.A}
-                      </Text>
-                    )}
-                    {q.options.B && (
-                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                        B. {q.options.B}
-                      </Text>
-                    )}
-                    {q.options.C && (
-                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                        C. {q.options.C}
-                      </Text>
-                    )}
-                    {q.options.D && (
-                      <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
-                        D. {q.options.D}
-                      </Text>
-                    )}
-                  </>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
+                  {/* 顯示選項 */}
+                  {q.A && (
+                    <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                      A. {q.A}
+                    </Text>
+                  )}
+                  {q.B && (
+                    <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                      B. {q.B}
+                    </Text>
+                  )}
+                  {q.C && (
+                    <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                      C. {q.C}
+                    </Text>
+                  )}
+                  {q.D && (
+                    <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                      D. {q.D}
+                    </Text>
+                  )}
+                  {/* 如果沒有 A, B, C, D，嘗試從 options 讀取 */}
+                  {!q.A && q.options && (
+                    <>
+                      {q.options.A && (
+                        <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                          A. {q.options.A}
+                        </Text>
+                      )}
+                      {q.options.B && (
+                        <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                          B. {q.options.B}
+                        </Text>
+                      )}
+                      {q.options.C && (
+                        <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                          C. {q.options.C}
+                        </Text>
+                      )}
+                      {q.options.D && (
+                        <Text style={[styles.previewOption, { color: colors.text, fontSize: textSizeValue }]}>
+                          D. {q.options.D}
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              ))}
+            </>
+          )}
+        </View>
       </ScrollView>
 
       {/* 底部按鈕 */}
