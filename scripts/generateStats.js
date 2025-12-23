@@ -12,7 +12,9 @@ console.log('           題目資料統計報告');
 console.log('═══════════════════════════════════════════════════════\n');
 
 console.log('📊 總體統計：');
-console.log(`   總題數: ${indexData.metadata.totalQuestions} 題`);
+// 動態計算總題數
+const totalQuestions = indexData.questionFiles.reduce((sum, file) => sum + (file.count || 0), 0);
+console.log(`   總題數: ${totalQuestions} 題`);
 console.log(`   總檔案數: ${files.length} 個`);
 console.log(`   測驗名稱: ${indexData.testNames.length} 個`);
 console.log(`   科目: ${indexData.subjects.length} 個`);

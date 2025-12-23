@@ -158,7 +158,6 @@ const indexData = {
   metadata: {
     version: '3.0.0', // 更新版本號
     lastUpdated: new Date().toISOString(),
-    totalQuestions,
   },
   testNames: Array.from(testNamesMap.values()),
   subjects: Array.from(subjectsMap.values()),

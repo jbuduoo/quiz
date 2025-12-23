@@ -19,7 +19,6 @@ interface IndexData {
   metadata: {
     version: string;
     lastUpdated: string;
-    totalQuestions: number;
   };
   testNames: TestName[];
   subjects: Subject[];
@@ -558,7 +557,6 @@ class QuestionService {
               metadata: {
                 version: currentVersion,
                 lastUpdated: new Date().toISOString(),
-                totalQuestions: 0,
               },
               testNames: JSON.parse(savedTestNames),
               subjects: JSON.parse(savedSubjects),
@@ -642,7 +640,6 @@ class QuestionService {
             metadata: {
               version: currentVersion,
               lastUpdated: new Date().toISOString(),
-              totalQuestions: 0,
             },
             testNames: JSON.parse(savedTestNames),
             subjects: JSON.parse(savedSubjects),
