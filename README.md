@@ -9,20 +9,6 @@
 - 顯示每個測驗的總題數、完成題數和完成百分比
 - 點擊測驗名稱進入科目列表頁
 
-### 📚 科目列表頁 (SubjectListScreen)
-- 顯示所選測驗的所有科目（如：信託法規、信託實務）
-- 顯示每個科目的總題數、完成題數和完成百分比
-- 點擊科目進入期數列表頁
-
-### 📖 期數列表頁 (SeriesListScreen)
-- 顯示所選科目的所有期數（如：59期、60期、61期）
-- **完成狀態顯示**：
-  - 全部完成：顯示 `期數(總題數 X題，正確 Y題，得分 Z分)`
-  - 未完成：顯示 `期數(總題數 X題)`
-- 底部整合「❤️ 錯題與收藏本」入口，顯示當前科目的錯題數量
-- 點擊期數即可開始測驗
-- 滑鼠懸停時顯示黃色高亮效果
-
 ### ✍️ 作答頁 (QuizScreen)
 - **題號顯示**：顯示「第 X 題」，便於識別題目位置
 - 顯示題目與四個選項（A/B/C/D）
@@ -254,17 +240,35 @@ Web 版本已完全支援，可以在任何現代瀏覽器中運行：
 - 在作答頁和複習頁顯示「第 X 題」
 - 題號從 1 開始，自動根據題目在期數中的位置生成
 
-### 實例編號（用於問題回報）
-- 格式：`測驗名稱-科目-期數-第X題`
-- 範例：`信託營業員-信託法規-61期-第1題`
-- 用於問題回報時精確定位題目位置
-
 ## 資料管理
+
+### 應用程式配置
+
+應用程式配置位於 `assets/data/questions/questions.json` 的 `config` 區塊中，可以控制應用程式的功能開關：
+
+```json
+{
+  "config": {
+    "appName": "政府採購法題庫",
+    "enableImport": false,      // 是否啟用匯入功能
+    "enableTrash": false,        // 是否啟用錯題本功能
+    "enableFavor": true,         // 是否啟用清除我的最愛功能
+    "configVersion": "government-procurement"
+  }
+}
+```
+
+**配置說明：**
+- `enableImport`：控制是否顯示匯入按鈕（📥），預設為 `true`
+- `enableTrash`：控制是否顯示錯題本刪除模式按鈕（🗑️），預設為 `true`
+- `enableFavor`：控制是否顯示「清除最愛」按鈕，預設為 `false`
+  - 當設為 `true` 時，會在首頁右上角顯示「清除最愛」按鈕
+  - 點擊後可以一次性清除所有收藏的題目
 
 ### 題目資料來源
 - 題目資料儲存在 `assets/data/questions/` 目錄下的 JSON 檔案
 - 每個期數一個 JSON 檔案
-- 使用索引檔案 `questions.json` 管理所有題目檔案的元資料
+- 使用索引檔案 `assets/data/questions/questions.json` 管理應用程式配置和所有題目檔案的元資料
 
 ### 答題記錄儲存
 - 使用 AsyncStorage 儲存在本地
@@ -272,70 +276,12 @@ Web 版本已完全支援，可以在任何現代瀏覽器中運行：
 - 包含所有用戶的答題狀態、收藏狀態、錯題記錄等
 
 ### 進度追蹤
-- 自動計算每個測驗、科目、期數的完成進度
+- 自動計算完成進度
 - 完成所有題目後自動計算分數和正確題數
 
 ## 開發說明
 
-### 新增題目
-1. 將 Excel 檔案放入 `data/` 目錄
-2. 執行轉換腳本：
-   ```bash
-   npm run convert:excel
-   ```
-3. 將 JSON 檔案放入對應的資料夾：`assets/data/questions/{testName}/{subject}/`
-4. 執行更新索引腳本：
-   ```bash
-   node scripts/updateQuestionIndex.js
-   ```
-5. 驗證路徑連結：
-   ```bash
-   node scripts/validatePaths.js
-   ```
-6. 重新啟動應用程式
 
-### 新增圖片
-1. 將圖片檔案放入對應資料夾：`assets/images/{testName}/{subject}/{series_no}/`
-2. 執行更新映射表腳本：
-   ```bash
-   node scripts/updateImageFileMap.js
-   ```
-3. 驗證路徑連結：
-   ```bash
-   node scripts/validatePaths.js
-   ```
-
-### 路徑驗證
-專案提供了路徑驗證腳本，用於檢查所有檔案路徑是否正確：
-
-```bash
-node scripts/validatePaths.js
-```
-
-此腳本會驗證：
-- ✅ 題目檔案路徑（questionFileMap.ts）
-- ✅ 圖片檔案路徑（imageFileMap.ts）
-- ✅ 索引檔案中的路徑引用
-- ✅ 配置檔案格式
-- ✅ 主要索引檔案結構
-- ✅ 應用程式資源
-
-### 自訂樣式
-所有樣式定義在各個 Screen 元件的 `StyleSheet.create()` 中，可根據需求調整。
-
-### Metro Bundler 配置
-- `metro.config.js` 已配置支援 JSON 檔案載入
-- 支援按需載入題目檔案，提升載入效能
-
-### 重要腳本說明
-
-| 腳本 | 功能 | 使用時機 |
-|------|------|----------|
-| `updateQuestionIndex.js` | 更新題目索引和映射表 | 新增/修改/刪除題目檔案後 |
-| `updateImageFileMap.js` | 更新圖片映射表 | 新增/修改圖片後 |
-| `validatePaths.js` | 驗證所有路徑連結 | 新增檔案後或懷疑路徑有問題時 |
-| `validateJson.js` | 驗證 JSON 格式 | 檢查題目檔案格式是否正確 |
-| `convertExcelToJSON.js` | Excel 轉 JSON | 將 Excel 題目轉換為 JSON 格式 |
 
 ## 文檔
 

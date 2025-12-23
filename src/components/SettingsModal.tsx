@@ -17,6 +17,7 @@ import { RootStackParamList } from '../../App';
 import { useTheme } from '../contexts/ThemeContext';
 import { TextSize, Theme } from '../services/SettingsService';
 import SettingsService from '../services/SettingsService';
+import QuestionService from '../services/QuestionService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -391,6 +392,96 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
               </View>
             )}
 
+            {/* 清除錯題本 */}
+            <View style={styles.section}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    color: colors.text,
+                    fontSize: textSizeValue,
+                  },
+                ]}
+              >
+                資料管理
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.clearButton,
+                  {
+                    backgroundColor: colors.error || '#DC3545',
+                  },
+                ]}
+                onPress={async () => {
+                  // 確認對話框
+                  const confirmMessage = '確定要清除所有錯題本（收藏）嗎？\n\n此操作無法復原，將清除所有收藏的題目。';
+                  
+                  if (Platform.OS === 'web') {
+                    // Web 平台
+                    if (typeof window !== 'undefined' && window.confirm(confirmMessage)) {
+                      try {
+                        await QuestionService.clearAllWrongBook();
+                        Alert.alert('成功', '已清除所有錯題本（收藏）');
+                        onClose();
+                      } catch (error) {
+                        console.error('清除錯題本失敗:', error);
+                        Alert.alert('錯誤', '清除錯題本失敗，請稍後再試');
+                      }
+                    }
+                  } else {
+                    // 原生平台
+                    Alert.alert(
+                      '確認清除',
+                      confirmMessage,
+                      [
+                        {
+                          text: '取消',
+                          style: 'cancel',
+                        },
+                        {
+                          text: '確定',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await QuestionService.clearAllWrongBook();
+                              Alert.alert('成功', '已清除所有錯題本（收藏）');
+                              onClose();
+                            } catch (error) {
+                              console.error('清除錯題本失敗:', error);
+                              Alert.alert('錯誤', '清除錯題本失敗，請稍後再試');
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }
+                }}
+              >
+                <Text
+                  style={[
+                    styles.clearButtonText,
+                    {
+                      color: '#FFFFFF',
+                      fontSize: textSizeValue,
+                    },
+                  ]}
+                >
+                  🗑️ 清除所有錯題本（收藏）
+                </Text>
+              </TouchableOpacity>
+              <Text
+                style={[
+                  styles.clearHint,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: textSizeValue - 2,
+                  },
+                ]}
+              >
+                此操作將清除所有收藏的題目，無法復原
+              </Text>
+            </View>
+
           </ScrollView>
         </View>
       </View>
@@ -499,6 +590,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   importHint: {
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  clearButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    }),
+  },
+  clearButtonText: {
+    fontWeight: '600',
+  },
+  clearHint: {
     marginTop: 4,
     lineHeight: 18,
   },

@@ -1,10 +1,9 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Question, UserAnswer, Chapter, TestName, Subject, Series, QuestionType } from '../types';
-import { questionFileMap } from './questionFileMap';
 import { loadImportedQuestionFile, getImportedQuestionFiles } from './ImportService';
 import { loadLocalQuestionFile } from '../utils/fileLoader';
-import VersionConfigService from './VersionConfigService';
+import QuizLibraryConfigService from './QuizLibraryConfigService';
 
 const USER_ANSWERS_KEY = '@quiz:userAnswers';
 const CHAPTERS_KEY = '@quiz:chapters';
@@ -16,16 +15,51 @@ const QUIZ_PROGRESS_KEY = '@quiz:quizProgress'; // 保存測驗進度
 
 // 索引資料結構
 interface IndexData {
-  metadata: {
+  // 新格式：扁平化欄位（優先）
+  dataVersion?: string;  // 資料格式版本（新格式）
+  lastUpdated?: string;  // 最後更新時間（新格式）
+  testName?: string;  // 根層級的 testName
+  appName?: string;  // 應用程式名稱（新格式）
+  enableImport?: boolean;  // 是否啟用匯入功能（新格式）
+  enableTrash?: boolean;  // 是否啟用錯題本（新格式）
+  enableFavor?: boolean;  // 是否啟用清除最愛功能（新格式）
+  configVersion?: string;  // 配置版本（新格式，取代 appConfig.version）
+  enabled?: boolean;  // 題庫是否啟用（新格式）
+  displayName?: string;  // 題庫顯示名稱（新格式）
+  displayOrder?: number;  // 題庫顯示順序（新格式）
+  
+  // 舊格式：嵌套結構（向後相容）
+  metadata?: {
     version: string;
     lastUpdated: string;
   };
-  testNames: TestName[];
-  subjects: Subject[];
-  series: Series[];
-  questionFiles: Array<{
+  appConfig?: {  // 應用程式配置（可選，可從 questions.json 或獨立檔案載入）
+    appName: string;
+    enableImport: boolean;
+    enableTrash: boolean;
+    enableFavor: boolean;
+    questionsPath?: string;
+    version: string;
+  };
+  quizLibraryConfig?: {  // 題庫配置（可選，可從 questions.json 或獨立檔案載入）
     testName: string;
-    subject: string;
+    enabled: boolean;
+    displayName: string;
+    displayOrder: number;
+  } | Array<{  // 支援物件或陣列格式（向後相容）
+    testName: string;
+    enabled: boolean;
+    displayName: string;
+    displayOrder: number;
+  }>;
+  
+  // 通用欄位
+  testNames?: TestName[];  // 可選，已廢棄，保留用於向後相容
+  subjects?: Subject[];  // 可選，已廢棄，保留用於向後相容
+  series?: Series[];  // 可選，已廢棄，保留用於向後相容
+  questionFiles: Array<{
+    testName?: string;  // 可選，如果沒有則使用根層級的 testName
+    subject?: string;  // 可選，如果沒有則表示沒有科目分類
     series_no: string;
     displayName?: string;  // 顯示名稱（中文），用於列表顯示
     file: string;
@@ -51,53 +85,93 @@ export interface QuestionFileData {
 // 快取已載入的題目檔案
 const questionCache = new Map<string, Question[]>();
 
-// 版本索引檔案映射（Metro bundler 需要靜態 require）
-const versionIndexMap: Record<string, () => IndexData> = {
-  'default': () => require('../../assets/data/questions/versions/default/questions.json'),
-  'government-procurement': () => require('../../assets/data/questions/versions/government-procurement/questions.json'),
-};
+// 索引檔案映射（Metro bundler 需要靜態 require）
+const indexMap: () => IndexData | any = () => require('../../assets/data/questions/questions.json');
+
+/**
+ * 展開 config 物件：如果資料有 config 物件，則將其內容展開到頂層（向後相容）
+ * 同時處理扁平化結構和嵌套結構的轉換
+ */
+function expandConfig(data: any): IndexData {
+  // 如果有 config 物件，展開它
+  if (data && data.config && typeof data.config === 'object') {
+    const { config, questionFiles, ...rest } = data;
+    const expanded: any = {
+      questionFiles: questionFiles || data.questionFiles,  // 保留 questionFiles
+      ...rest,  // 保留其他頂層欄位（向後相容）
+    };
+    
+    // 處理扁平化結構（新格式）
+    if (config.dataVersion !== undefined) {
+      expanded.dataVersion = config.dataVersion;
+      expanded.lastUpdated = config.lastUpdated;
+      expanded.testName = config.testName;
+      expanded.appName = config.appName;
+      expanded.enableImport = config.enableImport;
+      expanded.enableTrash = config.enableTrash;
+      expanded.enableFavor = config.enableFavor !== undefined ? config.enableFavor : false;
+      expanded.configVersion = config.configVersion;
+      expanded.enabled = config.enabled !== undefined ? config.enabled : true; // 預設為 true（啟用）
+      expanded.displayName = config.displayName;
+      expanded.displayOrder = config.displayOrder;
+      
+      // 同時建立舊格式結構以保持向後相容
+      expanded.metadata = {
+        version: config.dataVersion,
+        lastUpdated: config.lastUpdated || new Date().toISOString(),
+      };
+      expanded.appConfig = {
+        appName: config.appName,
+        enableImport: config.enableImport,
+        enableTrash: config.enableTrash,
+        enableFavor: config.enableFavor !== undefined ? config.enableFavor : false,
+        version: config.configVersion,
+        questionsPath: config.configVersion,  // 使用 configVersion 作為 questionsPath
+      };
+      expanded.quizLibraryConfig = {
+        testName: config.testName,
+        enabled: config.enabled !== undefined ? config.enabled : true, // 預設為 true（啟用）
+        displayName: config.displayName,
+        displayOrder: config.displayOrder,
+      };
+    } else {
+      // 舊格式：嵌套結構，直接展開
+      Object.assign(expanded, config);
+    }
+    
+    return expanded as IndexData;
+  }
+  // 如果沒有 config 物件，直接返回（向後相容舊格式）
+  return data as IndexData;
+}
 
 // 載入索引檔案
 async function loadIndexData(): Promise<IndexData | null> {
   console.log('📂 [loadIndexData] 開始載入索引資料');
   console.log('📂 [loadIndexData] 時間:', new Date().toISOString());
   
-  // 取得當前版本
-  const version = await VersionConfigService.getCurrentVersion();
-  const indexFileUrl = await VersionConfigService.getIndexFileUrl();
-  
-  console.log(`📂 [loadIndexData] 當前版本: ${version}`);
+  const indexFileUrl = '/assets/assets/data/questions/questions.json';
   
   try {
     // 在 React Native 平台（iOS/Android），使用靜態 require
-    // 注意：Metro bundler 需要靜態路徑，所以使用版本映射
+    // 注意：Metro bundler 需要靜態路徑
     if (Platform.OS !== 'web') {
       console.log('📂 [loadIndexData] 在 React Native 平台，嘗試使用 require 載入索引');
       try {
-        // 使用版本映射的靜態 require
-        const loader = versionIndexMap[version];
-        if (!loader) {
-          console.error(`❌ [loadIndexData] 版本 "${version}" 沒有對應的 require 映射`);
-          console.error(`   可用的版本: ${Object.keys(versionIndexMap).join(', ')}`);
-          throw new Error(`版本 ${version} 沒有對應的映射`);
-        }
-        
-        const indexModule = loader() as IndexData;
+        const rawData = indexMap();
+        const indexModule = expandConfig(rawData);
         console.log('📂 [loadIndexData] require 成功，檢查資料結構', {
           hasIndexModule: !!indexModule,
-          hasTestNames: !!indexModule?.testNames,
-          hasSubjects: !!indexModule?.subjects,
-          testNamesLength: indexModule?.testNames?.length,
-          subjectsLength: indexModule?.subjects?.length
+          hasQuestionFiles: !!indexModule?.questionFiles,
+          questionFilesLength: indexModule?.questionFiles?.length
         });
-        if (indexModule && indexModule.testNames && indexModule.subjects) {
-          console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.testNames.length} 個測驗名稱）`);
+        if (indexModule && indexModule.questionFiles) {
+          console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.questionFiles.length} 個題目檔案）`);
           return indexModule;
         } else {
           console.warn('⚠️ [loadIndexData] 索引資料結構不完整', {
             hasIndexModule: !!indexModule,
-            hasTestNames: !!indexModule?.testNames,
-            hasSubjects: !!indexModule?.subjects
+            hasQuestionFiles: !!indexModule?.questionFiles
           });
         }
       } catch (requireError) {
@@ -113,8 +187,6 @@ async function loadIndexData(): Promise<IndexData | null> {
     }
     
     // 在 Web 平台，使用 fetch
-    // 注意：Metro bundler 會自動移除 /assets/ 前綴，所以我們需要使用 assets/ 開頭的路徑
-    // 根據當前版本動態載入對應版本的 questions.json
     if (typeof window !== 'undefined') {
       console.log('📂 [loadIndexData] 在 Web 平台，嘗試使用 fetch 載入索引');
       try {
@@ -127,14 +199,15 @@ async function loadIndexData(): Promise<IndexData | null> {
           contentType: response.headers.get('content-type')
         });
         if (response.ok) {
-          const data = await response.json() as IndexData;
+          const rawData = await response.json();
+          const data = expandConfig(rawData);
           console.log('📂 [loadIndexData] fetch JSON 解析成功', {
             hasData: !!data,
-            hasTestNames: !!data?.testNames,
-            hasSubjects: !!data?.subjects
+            hasQuestionFiles: !!data?.questionFiles,
+            questionFilesLength: data?.questionFiles?.length
           });
-          if (data && data.testNames && data.subjects) {
-            console.log(`✅ [loadIndexData] 成功從 Web 載入索引資料（${data.testNames.length} 個測驗名稱）`);
+          if (data && data.questionFiles) {
+            console.log(`✅ [loadIndexData] 成功從 Web 載入索引資料（${data.questionFiles.length} 個題目檔案）`);
             return data;
           }
         } else {
@@ -229,19 +302,7 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
   }
   
   try {
-    // 優先嘗試從匯入的題庫載入（AsyncStorage）
-    try {
-      const importedQuestions = await loadImportedQuestionFile(filePath);
-      if (importedQuestions.length > 0) {
-        questionCache.set(filePath, importedQuestions);
-        console.log(`✅ 從匯入題庫載入: ${filePath} (${importedQuestions.length} 題)`);
-        return importedQuestions;
-      }
-    } catch (importError) {
-      // 如果載入匯入題庫失敗，繼續嘗試其他方法
-      console.log(`ℹ️ 無法從匯入題庫載入 ${filePath}，嘗試其他方法`);
-    }
-    
+    // 只載入 assets/data/questions 裡的資料，不從匯入題庫載入
     // 從路徑解析 testName, subject, series_no
     let pathInfo = parseFilePath(filePath);
     
@@ -254,8 +315,8 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
           const fileInfo = indexData.questionFiles.find(f => f.file === filePath);
           if (fileInfo) {
             pathInfo = {
-              testName: fileInfo.testName,
-              subject: fileInfo.subject || null,
+              testName: fileInfo.testName || indexData.testName || '',
+              subject: fileInfo.subject || null,  // 如果沒有 subject，設為 null
               series_no: fileInfo.series_no
             };
             console.log(`✅ [loadQuestionFile] 從索引資料找到檔案資訊:`, pathInfo);
@@ -273,38 +334,37 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
     
     const { testName, subject, series_no } = pathInfo;
     
-    // 優先使用映射表載入（適用於所有平台，包括 Web）
-    // Metro Bundler 會自動處理資源打包，無需使用 fetch
-    if (questionFileMap[filePath]) {
-      try {
-        const questionModule = questionFileMap[filePath]() as QuestionFileData;
+    // 使用 loadLocalQuestionFile 載入題目檔案（直接讀取方式）
+    console.log(`ℹ️ [loadQuestionFile] 使用 loadLocalQuestionFile 載入: ${filePath}`);
+    try {
+      // 如果 filePath 包含路徑分隔符，提取檔名；否則直接使用
+      const fileName = filePath.includes('/') ? filePath.split('/').pop() || filePath : filePath;
+      const localFileData = await loadLocalQuestionFile(fileName);
+      
+      if (localFileData) {
+        // 處理載入的資料：可能是陣列格式或物件格式
+        let questionsArray: any[] = [];
+        if (Array.isArray(localFileData)) {
+          questionsArray = localFileData;
+        } else if (localFileData.questions && Array.isArray(localFileData.questions)) {
+          questionsArray = localFileData.questions;
+        }
         
-        if (questionModule && questionModule.questions) {
-          // 新格式：從路徑取得 testName、subject、series_no
-          // 舊格式：從 metadata 取得（向後相容）
-          const metadata = questionModule.metadata || {};
-          const finalTestName = metadata.testName || testName;
-          // 如果 subject 為 null（兩層結構），finalSubject 也為 null；否則使用 metadata 或 pathInfo 的 subject
-          const finalSubject = subject === null ? null : (metadata.subject || subject || null);
-          const finalSeriesNo = metadata.series_no || series_no;
+        if (questionsArray.length > 0) {
+          // 標準化題目格式（使用 pathInfo 中的變數）
+          const finalTestName = testName;
+          const finalSubject = subject === null ? null : subject;
+          const finalSeriesNo = series_no;
           
-          // 為每個題目添加題號和 metadata 資訊，並確保所有欄位類型正確
-          const normalizedQuestions = questionModule.questions.map((q: any, index) => {
-            // 建立完整的題目 ID
-            // 三層結構：testName_subject_series_no_題號
-            // 兩層結構：testName_series_no_題號（沒有 subject）
-            const questionId = finalSubject 
-              ? `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`
-              : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
+          const normalizedQuestions = questionsArray.map((q: any, index: number) => {
+            // 生成題目 ID：使用 series_no + 題目檔案中的 Id 欄位
+            // 如果題目有 Id 欄位，使用它；否則使用 index + 1 作為備用
+            const questionIdFromFile = q.Id || q.id || String(index + 1);
+            const questionId = `${finalSeriesNo}_${questionIdFromFile}`;
             
-            // 建立新的物件，確保類型正確
-            // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
-            // 移除問題開頭的編號
             const rawContent = String(q.Q || q.content || '');
             const cleanedContent = removeQuestionNumberPrefix(rawContent);
             
-            // 處理 E 選項：優先使用 q.E，其次使用 q.options?.E
-            // 與 ImportService.ts 和 Web fetch 載入的邏輯保持一致
             const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
               ? String(q.E) 
               : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
@@ -318,114 +378,31 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
               B: String(q.B || q.options?.B || ''),
               C: String(q.C || q.options?.C || ''),
               D: String(q.D || q.options?.D || ''),
-              E: EValue,  // 處理 E 選項（用於複選題）
+              E: EValue,
               Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
               exp: String(q.Exp || q.exp || q.explanation || ''),
               questionNumber: index + 1,
-              // 從路徑或 metadata 補充可選欄位
               testName: finalTestName,
-              subject: finalSubject || undefined, // 如果沒有 subject，設為 undefined
+              subject: finalSubject || undefined,
               series_no: finalSeriesNo,
               chapter: q.chapter || undefined,
-              // 支援 Type 欄位（新格式）
               Type: q.Type as QuestionType | undefined,
             };
-            
             return normalizedQuestion;
           });
-          questionCache.set(filePath, normalizedQuestions);
-          console.log(`✅ 載入題目檔案: ${filePath} (${normalizedQuestions.length} 題)`);
-          return normalizedQuestions;
-        } else {
-          console.error(`❌ [loadQuestionFile] 檔案格式錯誤: ${filePath}`, {
-            hasModule: !!questionModule,
-            hasQuestions: !!questionModule?.questions
-          });
-        }
-      } catch (requireError) {
-        console.error(`❌ [loadQuestionFile] 無法使用 require 載入題目檔案 ${filePath}:`, requireError);
-        // 在 Android 上，如果 require 失敗，可能是資源未正確打包
-        // 記錄詳細錯誤以便除錯
-        if (requireError instanceof Error) {
-          console.error(`❌ [loadQuestionFile] 錯誤詳情: ${requireError.message}`);
-          console.error(`❌ [loadQuestionFile] 錯誤堆疊: ${requireError.stack}`);
-        } else {
-          console.error(`❌ [loadQuestionFile] 未知錯誤類型:`, typeof requireError, requireError);
-        }
-      }
-    } else {
-      // 映射表中沒有找到，嘗試使用 loadLocalQuestionFile（類似 example.json 的載入方式）
-      console.log(`ℹ️ [loadQuestionFile] 映射表中沒有找到 ${filePath}，嘗試使用 loadLocalQuestionFile 載入`);
-      try {
-        // 如果 filePath 包含路徑分隔符，提取檔名；否則直接使用
-        const fileName = filePath.includes('/') ? filePath.split('/').pop() || filePath : filePath;
-        const localFileData = await loadLocalQuestionFile(fileName);
-        
-        if (localFileData) {
-          // 處理載入的資料：可能是陣列格式或物件格式
-          let questionsArray: any[] = [];
-          if (Array.isArray(localFileData)) {
-            questionsArray = localFileData;
-          } else if (localFileData.questions && Array.isArray(localFileData.questions)) {
-            questionsArray = localFileData.questions;
-          }
           
-          if (questionsArray.length > 0) {
-            // 標準化題目格式（使用 pathInfo 中的變數）
-            const finalTestName = testName;
-            const finalSubject = subject === null ? null : subject;
-            const finalSeriesNo = series_no;
-            
-            const normalizedQuestions = questionsArray.map((q: any, index: number) => {
-              const questionId = finalSubject 
-                ? `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`
-                : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
-              
-              const rawContent = String(q.Q || q.content || '');
-              const cleanedContent = removeQuestionNumberPrefix(rawContent);
-              
-              const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
-                ? String(q.E) 
-                : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
-                  ? String(q.options.E)
-                  : undefined;
-              
-              const normalizedQuestion: Question = {
-                id: questionId,
-                content: cleanedContent,
-                A: String(q.A || q.options?.A || ''),
-                B: String(q.B || q.options?.B || ''),
-                C: String(q.C || q.options?.C || ''),
-                D: String(q.D || q.options?.D || ''),
-                E: EValue,
-                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
-                exp: String(q.Exp || q.exp || q.explanation || ''),
-                questionNumber: index + 1,
-                testName: finalTestName,
-                subject: finalSubject || undefined,
-                series_no: finalSeriesNo,
-                chapter: q.chapter || undefined,
-                Type: q.Type as QuestionType | undefined,
-              };
-              return normalizedQuestion;
-            });
-            
-            questionCache.set(filePath, normalizedQuestions);
-            console.log(`✅ [loadQuestionFile] 使用 loadLocalQuestionFile 載入成功: ${filePath} (${normalizedQuestions.length} 題)`);
-            return normalizedQuestions;
-          }
+          questionCache.set(filePath, normalizedQuestions);
+          console.log(`✅ [loadQuestionFile] 使用 loadLocalQuestionFile 載入成功: ${filePath} (${normalizedQuestions.length} 題)`);
+          return normalizedQuestions;
         }
-      } catch (localLoadError) {
-        console.warn(`⚠️ [loadQuestionFile] loadLocalQuestionFile 載入失敗: ${filePath}`, localLoadError);
       }
+    } catch (localLoadError) {
+      console.warn(`⚠️ [loadQuestionFile] loadLocalQuestionFile 載入失敗: ${filePath}`, localLoadError);
     }
     
-    // 如果映射表和 loadLocalQuestionFile 都失敗，在 Web 平台嘗試使用 fetch（作為備用方案）
+    // 如果 loadLocalQuestionFile 失敗，在 Web 平台嘗試使用 fetch（作為備用方案）
     if (typeof window !== 'undefined') {
       try {
-        // 構建正確的檔案路徑（包含版本資訊）
-        const version = await VersionConfigService.getCurrentVersion();
-        const questionsDataPath = await VersionConfigService.getQuestionsDataPath();
         // 對檔名進行 URL 編碼以支援中文檔名
         // 如果 filePath 包含路徑分隔符，則分割處理；否則直接編碼檔名
         let encodedFileName: string;
@@ -445,8 +422,7 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
           encodedFileName = encodeURIComponent(filePath);
         }
         // Web 平台需要 /assets/assets/ 前綴（Metro bundler 會自動移除第一個 /assets/）
-        // 注意：questionsDataPath 已經包含 assets/ 開頭，所以只需要再加一個 /assets/ 前綴
-        const fetchPath = `/assets/${questionsDataPath}/${encodedFileName}`;
+        const fetchPath = `/assets/assets/data/questions/${encodedFileName}`;
         
         console.log(`🌐 [loadQuestionFile] Web 平台 fetch 路徑: ${fetchPath} (原始: ${filePath})`);
         const response = await fetch(fetchPath);
@@ -462,12 +438,10 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
             
             // 為每個題目添加題號和 metadata 資訊，並確保所有欄位類型正確
             const normalizedQuestions = data.questions.map((q: any, index: number) => {
-              // 建立完整的題目 ID
-              // 三層結構：testName_subject_series_no_題號
-              // 兩層結構：testName_series_no_題號（沒有 subject）
-              const questionId = finalSubject 
-                ? `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`
-                : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
+              // 生成題目 ID：使用 series_no + 題目檔案中的 Id 欄位
+              // 如果題目有 Id 欄位，使用它；否則使用 index + 1 作為備用
+              const questionIdFromFile = q.Id || q.id || String(index + 1);
+              const questionId = `${finalSeriesNo}_${questionIdFromFile}`;
               
               // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
               // 移除問題開頭的編號
@@ -540,7 +514,7 @@ class QuestionService {
       this.indexData = await loadIndexData();
       console.log('📂 [initializeData] loadIndexData() 完成', {
         hasIndexData: !!this.indexData,
-        testNamesCount: this.indexData?.testNames?.length || 0
+        questionFilesCount: this.indexData?.questionFiles?.length || 0
       });
       
       if (!this.indexData) {
@@ -558,9 +532,9 @@ class QuestionService {
                 version: currentVersion,
                 lastUpdated: new Date().toISOString(),
               },
-              testNames: JSON.parse(savedTestNames),
-              subjects: JSON.parse(savedSubjects),
-              series: JSON.parse(savedSeries),
+              testNames: savedTestNames ? JSON.parse(savedTestNames) : [],
+              subjects: savedSubjects ? JSON.parse(savedSubjects) : [],
+              series: savedSeries ? JSON.parse(savedSeries) : [],
               questionFiles: [],
             };
           } else {
@@ -580,10 +554,8 @@ class QuestionService {
       }
       
       console.log(`✅ [initializeData] 索引資料載入成功:`, {
-        testNamesCount: this.indexData.testNames.length,
-        subjectsCount: this.indexData.subjects.length,
-        seriesCount: this.indexData.series.length,
-        questionFilesCount: this.indexData.questionFiles.length
+        questionFilesCount: this.indexData.questionFiles.length,
+        testName: this.indexData.testName
       });
       
       // 如果版本不同，清除舊資料（包括用戶答題記錄，因為 ID 格式已改變）
@@ -602,9 +574,10 @@ class QuestionService {
       await this.mergeImportedIndex();
       
       // 儲存索引資料到 AsyncStorage（用於快速存取）
-      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames));
-      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(this.indexData.subjects));
-      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series));
+      // 如果存在這些欄位，則儲存；否則儲存空陣列
+      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames || []));
+      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(this.indexData.subjects || []));
+      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series || []));
       
       const existingAnswers = await AsyncStorage.getItem(USER_ANSWERS_KEY);
       if (!existingAnswers) {
@@ -641,9 +614,9 @@ class QuestionService {
               version: currentVersion,
               lastUpdated: new Date().toISOString(),
             },
-            testNames: JSON.parse(savedTestNames),
-            subjects: JSON.parse(savedSubjects),
-            series: JSON.parse(savedSeries),
+            testNames: savedTestNames ? JSON.parse(savedTestNames) : [],
+            subjects: savedSubjects ? JSON.parse(savedSubjects) : [],
+            series: savedSeries ? JSON.parse(savedSeries) : [],
             questionFiles: [],
           };
         }
@@ -704,32 +677,13 @@ class QuestionService {
       }
       
       const parsed = JSON.parse(data);
-      const entriesCount = Object.keys(parsed).length;
-      if (entriesCount > 0) {
-        console.log(`📖 [getUserAnswers] 記錄的 keys:`, Object.keys(parsed).slice(0, 5));
-      }
       
       // 確保所有布林值都是真正的布林類型，而不是字串
       const normalized: Record<string, UserAnswer> = {};
-      let processedCount = 0;
-      let skippedCount = 0;
       
       for (const [key, value] of Object.entries(parsed)) {
         if (value && typeof value === 'object') {
           const answerValue = value as any;
-          
-          // 記錄第一個項目的原始類型
-          if (processedCount === 0) {
-            console.log(`🔍 [getUserAnswers] 第一個答案的原始類型:`, {
-              key,
-              isCorrect: typeof answerValue.isCorrect,
-              isCorrectValue: answerValue.isCorrect,
-              isAnswered: typeof answerValue.isAnswered,
-              isAnsweredValue: answerValue.isAnswered,
-              isFavorite: typeof answerValue.isFavorite,
-              isFavoriteValue: answerValue.isFavorite,
-            });
-          }
           
           normalized[key] = {
             ...answerValue,
@@ -740,23 +694,6 @@ class QuestionService {
             isUncertain: Boolean(answerValue.isUncertain),
             wrongCount: typeof answerValue.wrongCount === 'number' ? answerValue.wrongCount : 0,
           } as UserAnswer;
-          
-          // 記錄第一個項目的轉換後類型
-          if (processedCount === 0) {
-            console.log(`✅ [getUserAnswers] 第一個答案轉換後:`, {
-              key,
-              isCorrect: typeof normalized[key].isCorrect,
-              isCorrectValue: normalized[key].isCorrect,
-              isAnswered: typeof normalized[key].isAnswered,
-              isAnsweredValue: normalized[key].isAnswered,
-              isFavorite: typeof normalized[key].isFavorite,
-              isFavoriteValue: normalized[key].isFavorite,
-            });
-          }
-          
-          processedCount++;
-        } else {
-          skippedCount++;
         }
       }
       
@@ -989,10 +926,13 @@ class QuestionService {
           if (!q.subject) return false;
         }
         
-        // 錯題本只顯示收藏的題目
-        if (!Boolean(answer.isFavorite)) return false;
+        // 錯題本只顯示收藏的題目（收藏和錯題本是同步的）
+        const isFavorite = Boolean(answer.isFavorite);
         
-        // 如果指定 onlyWrong，則只顯示答錯的收藏題
+        // 如果題目沒有收藏，則過濾掉
+        if (!isFavorite) return false;
+        
+        // 如果指定 onlyWrong，則只顯示收藏中答錯的題目
         if (filter?.onlyWrong && Boolean(answer.isCorrect)) return false;
 
         return true;
@@ -1025,20 +965,25 @@ class QuestionService {
 
       let wrongCount = 0;
       let favoriteCount = 0;
+      let total = 0;
 
       allQuestions.forEach(q => {
         const answer = userAnswers[q.id];
-        if (answer && Boolean(answer.isFavorite)) {
+        if (!answer) return;
+        
+        const isFavorite = Boolean(answer.isFavorite);
+        
+        // 統計錯題本中的題目（只統計收藏的題目）
+        if (isFavorite) {
+          total++;
           favoriteCount++;
+          
           // 統計收藏中答錯的題數
           if (Boolean(answer.isAnswered) && !Boolean(answer.isCorrect)) {
             wrongCount++;
           }
         }
       });
-
-      // 總數就是收藏的題數
-      const total = favoriteCount;
 
       return { total, wrongCount, favoriteCount };
     } catch (error) {
@@ -1063,10 +1008,17 @@ class QuestionService {
     
     // 找到對應的題目檔案
     // 如果 subject 為 null 或空字串，表示沒有科目
+    // 如果 questionFiles 中沒有 testName，則使用根層級的 testName
+    const rootTestName = this.indexData.testName;
     const fileInfo = this.indexData.questionFiles.find(
-      f => f.testName === testName && 
-           (subject ? f.subject === subject : (!f.subject || f.subject === '')) && 
-           f.series_no === series_no
+      f => {
+        const fileTestName = f.testName || rootTestName;
+        // 如果 subject 為 null，則匹配沒有 subject 的檔案；否則匹配相同 subject
+        const subjectMatch = subject 
+          ? (f.subject === subject)
+          : (!f.subject || f.subject === '');
+        return fileTestName === testName && subjectMatch && f.series_no === series_no;
+      }
     );
     
     if (!fileInfo) {
@@ -1079,22 +1031,50 @@ class QuestionService {
     return await loadQuestionFile(fileInfo.file);
   }
 
-  // 取得所有測驗名稱
+  // 取得所有測驗名稱（僅返回啟用的題庫）
   async getTestNames(): Promise<TestName[]> {
     try {
       if (!this.indexData) {
         this.indexData = await loadIndexData();
       }
       
+      // 取得所有 testNames
+      let allTestNames: TestName[] = [];
       if (this.indexData) {
-        // 更新進度後返回
-        await this.updateProgress();
-        return this.indexData.testNames;
+        allTestNames = this.indexData.testNames || [];
+      } else {
+        // 從 AsyncStorage 讀取
+        const data = await AsyncStorage.getItem(TEST_NAMES_KEY);
+        allTestNames = data ? JSON.parse(data) : [];
       }
       
-      // 從 AsyncStorage 讀取
-      const data = await AsyncStorage.getItem(TEST_NAMES_KEY);
-      return data ? JSON.parse(data) : [];
+      // 如果沒有 testNames，返回空陣列
+      if (allTestNames.length === 0) {
+        return [];
+      }
+      
+      // 取得啟用的 testName 列表
+      try {
+        const enabledTestNames = await QuizLibraryConfigService.getEnabledTestNames();
+        
+        // 如果沒有配置或配置為空，返回所有 testNames（向後相容）
+        if (enabledTestNames.length === 0) {
+          console.log('⚠️ [getTestNames] 沒有啟用的題庫配置，返回所有題庫（向後相容）');
+          return allTestNames;
+        }
+        
+        // 過濾只返回啟用的 testNames，保持原始順序（即 questionFiles 的順序）
+        const filteredTestNames = allTestNames.filter(testName => 
+          enabledTestNames.includes(testName.name)
+        );
+        
+        console.log(`✅ [getTestNames] 過濾後返回 ${filteredTestNames.length}/${allTestNames.length} 個啟用的題庫（已按 questionFiles 順序）`);
+        return filteredTestNames;
+      } catch (configError) {
+        console.warn('⚠️ [getTestNames] 無法載入題庫配置，返回所有題庫（向後相容）:', configError);
+        // 如果載入配置失敗，返回所有 testNames（向後相容）
+        return allTestNames;
+      }
     } catch (error) {
       console.error('取得測驗名稱失敗:', error);
       return [];
@@ -1108,7 +1088,7 @@ class QuestionService {
         this.indexData = await loadIndexData();
       }
       
-      if (this.indexData) {
+      if (this.indexData && this.indexData.subjects) {
         return this.indexData.subjects.filter(s => s.testName === testName);
       }
       
@@ -1133,7 +1113,7 @@ class QuestionService {
       }
       
       if (this.indexData) {
-        return this.indexData.subjects;
+        return this.indexData.subjects || [];
       }
       
       const data = await AsyncStorage.getItem(SUBJECTS_KEY);
@@ -1154,7 +1134,7 @@ class QuestionService {
         this.indexData = await loadIndexData();
       }
       
-      if (this.indexData) {
+      if (this.indexData && this.indexData.series) {
         return this.indexData.series.filter(
           s => s.testName === testName && s.subject === subject
         );
@@ -1182,7 +1162,7 @@ class QuestionService {
         this.indexData = await loadIndexData();
       }
       
-      if (this.indexData) {
+      if (this.indexData && this.indexData.series) {
         return this.indexData.series.filter(
           s => s.testName === testName && (!s.subject || s.subject === '')
         );
@@ -1216,12 +1196,16 @@ class QuestionService {
       
       if (this.indexData && this.indexData.questionFiles) {
         // 查找對應的 questionFile
+        // 如果 questionFiles 中沒有 testName，則使用根層級的 testName
+        const rootTestName = this.indexData.testName;
         const fileInfo = this.indexData.questionFiles.find(f => {
           const matchSeries = f.series_no === series_no;
-          const matchTestName = !testName || f.testName === testName;
+          const fileTestName = f.testName || rootTestName;
+          const matchTestName = !testName || fileTestName === testName;
+          // 如果 subject 為 null，則匹配沒有 subject 的檔案；否則匹配相同 subject
           const matchSubject = !subject 
             ? (!f.subject || f.subject === '')
-            : f.subject === subject;
+            : (f.subject === subject);
           return matchSeries && matchTestName && matchSubject;
         });
         
@@ -1256,144 +1240,136 @@ class QuestionService {
       const userAnswers = await this.getUserAnswers();
       console.log(`📊 [updateProgress] 用戶答案: ${Object.keys(userAnswers).length} 筆`);
       
-      // 更新 testNames 進度
-      const updatedTestNames = await Promise.all(
-        this.indexData.testNames.map(async testName => {
-          const relatedFiles = this.indexData!.questionFiles.filter(
-            f => f.testName === testName.name
-          );
-          
-          let totalQuestions = 0;
-          let completedQuestions = 0;
-          
-          // 載入所有相關題目檔案來計算進度
-          for (const fileInfo of relatedFiles) {
-            console.log(`📊 [updateProgress] 載入檔案計算進度: ${fileInfo.file}`);
-            const questions = await loadQuestionFile(fileInfo.file);
-            totalQuestions += questions.length;
-            const completedInFile = questions.filter(q => {
-              const answer = userAnswers[q.id];
-              const isAnswered = Boolean(answer?.isAnswered);
-              return isAnswered;
-            }).length;
-            completedQuestions += completedInFile;
-            console.log(`📊 [updateProgress] 檔案 ${fileInfo.file}: ${completedInFile}/${questions.length} 已完成`);
-          }
-          
-          return {
-            ...testName,
-            totalQuestions,
-            completedQuestions,
-            completionPercentage: totalQuestions > 0
-              ? Math.round((completedQuestions / totalQuestions) * 100)
-              : 0,
-          };
-        })
-      );
+      // 更新進度統計
+      // 注意：testNames, subjects, series 欄位已廢棄，不再更新
+      // 如果這些欄位存在，則更新；否則跳過
+      if (this.indexData.testNames && this.indexData.testNames.length > 0) {
+        const rootTestName = this.indexData.testName;
+        const updatedTestNames = await Promise.all(
+          (this.indexData.testNames || []).map(async testName => {
+            const relatedFiles = this.indexData!.questionFiles.filter(
+              f => {
+                const fileTestName = f.testName || rootTestName;
+                return fileTestName === testName.name;
+              }
+            );
+            
+            let totalQuestions = 0;
+            let completedQuestions = 0;
+            
+            for (const fileInfo of relatedFiles) {
+              const questions = await loadQuestionFile(fileInfo.file);
+              totalQuestions += questions.length;
+              completedQuestions += questions.filter(q => {
+                const answer = userAnswers[q.id];
+                return Boolean(answer?.isAnswered);
+              }).length;
+            }
+            
+            return {
+              ...testName,
+              totalQuestions,
+              completedQuestions,
+              completionPercentage: totalQuestions > 0
+                ? Math.round((completedQuestions / totalQuestions) * 100)
+                : 0,
+            };
+          })
+        );
+        await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(updatedTestNames));
+        this.indexData.testNames = updatedTestNames;
+      }
       
-      // 更新 subjects 進度
-      console.log(`📊 [updateProgress] 開始更新 ${this.indexData.subjects.length} 個科目進度`);
-      const updatedSubjects = await Promise.all(
-        this.indexData.subjects.map(async (subject) => {
-          const relatedFiles = this.indexData!.questionFiles.filter(
-            f => f.testName === subject.testName && f.subject === subject.name
-          );
-          console.log(`📊 [updateProgress] 科目 ${subject.name} 相關檔案數: ${relatedFiles.length}`);
-          
-          let totalQuestions = 0;
-          let completedQuestions = 0;
-          
-          for (const fileInfo of relatedFiles) {
-            console.log(`📊 [updateProgress] 載入科目檔案: ${fileInfo.file}`);
+      if (this.indexData.subjects && this.indexData.subjects.length > 0) {
+        const rootTestName = this.indexData.testName;
+        const updatedSubjects = await Promise.all(
+          (this.indexData.subjects || []).map(async (subject) => {
+            const relatedFiles = this.indexData!.questionFiles.filter(
+              f => {
+                const fileTestName = f.testName || rootTestName;
+                return fileTestName === subject.testName && (f.subject === subject.name || (!f.subject && subject.name === ''));
+              }
+            );
+            
+            let totalQuestions = 0;
+            let completedQuestions = 0;
+            
+            for (const fileInfo of relatedFiles) {
+              const questions = await loadQuestionFile(fileInfo.file);
+              totalQuestions += questions.length;
+              completedQuestions += questions.filter(q => {
+                const answer = userAnswers[q.id];
+                return Boolean(answer?.isAnswered);
+              }).length;
+            }
+            
+            return {
+              ...subject,
+              totalQuestions,
+              completedQuestions,
+              completionPercentage: totalQuestions > 0
+                ? Math.round((completedQuestions / totalQuestions) * 100)
+                : 0,
+            };
+          })
+        );
+        await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(updatedSubjects));
+        this.indexData.subjects = updatedSubjects;
+      }
+      
+      if (this.indexData.series && this.indexData.series.length > 0) {
+        const rootTestName = this.indexData.testName;
+        const updatedSeries = await Promise.all(
+          (this.indexData.series || []).map(async (series) => {
+            const fileInfo = this.indexData!.questionFiles.find(
+              f => {
+                const fileTestName = f.testName || rootTestName;
+                const subjectMatch = series.subject 
+                  ? (f.subject === series.subject)
+                  : (!f.subject || f.subject === '');
+                return fileTestName === series.testName && subjectMatch && f.series_no === series.name;
+              }
+            );
+            
+            if (!fileInfo) {
+              return series;
+            }
+            
             const questions = await loadQuestionFile(fileInfo.file);
-            totalQuestions += questions.length;
-            const completedInFile = questions.filter(q => {
+            const completedQuestions = questions.filter(q => {
               const answer = userAnswers[q.id];
               return Boolean(answer?.isAnswered);
             }).length;
-            completedQuestions += completedInFile;
-            console.log(`📊 [updateProgress] 科目檔案 ${fileInfo.file}: ${completedInFile}/${questions.length} 已完成`);
-          }
-          
-          const result = {
-            ...subject,
-            totalQuestions,
-            completedQuestions,
-            completionPercentage: totalQuestions > 0
-              ? Math.round((completedQuestions / totalQuestions) * 100)
-              : 0,
-          };
-          console.log(`✅ [updateProgress] 科目 ${subject.name} 進度: ${completedQuestions}/${totalQuestions} (${result.completionPercentage}%)`);
-          return result;
-        })
-      );
+            
+            const correctQuestions = questions.filter(q => {
+              const answer = userAnswers[q.id];
+              return Boolean(answer?.isCorrect);
+            }).length;
+            
+            const allAnswered = completedQuestions === questions.length && questions.length > 0;
+            let score = series.score;
+            
+            if (allAnswered) {
+              score = Math.round((correctQuestions / questions.length) * 100);
+            }
+            
+            return {
+              ...series,
+              totalQuestions: questions.length,
+              completedQuestions,
+              completionPercentage: questions.length > 0
+                ? Math.round((completedQuestions / questions.length) * 100)
+                : 0,
+              score: score,
+              correctCount: correctQuestions,
+            };
+          })
+        );
+        await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(updatedSeries));
+        this.indexData.series = updatedSeries;
+      }
       
-      // 更新 series 進度
-      console.log(`📊 [updateProgress] 開始更新 ${this.indexData.series.length} 個期數進度`);
-      const updatedSeries = await Promise.all(
-        this.indexData.series.map(async (series) => {
-          const fileInfo = this.indexData!.questionFiles.find(
-            f => f.testName === series.testName && 
-                 f.subject === series.subject && 
-                 f.series_no === series.name
-          );
-          
-          if (!fileInfo) {
-            console.warn(`⚠️ [updateProgress] 期數 ${series.name} 找不到對應檔案`);
-            return series;
-          }
-          
-          console.log(`📊 [updateProgress] 載入期數檔案: ${fileInfo.file}`);
-          const questions = await loadQuestionFile(fileInfo.file);
-          const completedQuestions = questions.filter(q => {
-            const answer = userAnswers[q.id];
-            return Boolean(answer?.isAnswered);
-          }).length;
-          
-          // 計算正確題數
-          const correctQuestions = questions.filter(q => {
-            const answer = userAnswers[q.id];
-            return Boolean(answer?.isCorrect);
-          }).length;
-          
-          console.log(`📊 [updateProgress] 期數 ${series.name}: ${completedQuestions}/${questions.length} 已完成, ${correctQuestions} 題正確`);
-          
-          // 只有在完成所有題目時才計算分數
-          const allAnswered = completedQuestions === questions.length && questions.length > 0;
-          let score = series.score;  // 保留原有分數
-          
-          if (allAnswered) {
-            // 計算分數：正確題數 / 總題數 * 100
-            score = Math.round((correctQuestions / questions.length) * 100);
-            console.log(`📊 [updateProgress] 期數 ${series.name} 已完成，分數: ${score}`);
-          }
-          
-          const result = {
-            ...series,
-            totalQuestions: questions.length,
-            completedQuestions,
-            completionPercentage: questions.length > 0
-              ? Math.round((completedQuestions / questions.length) * 100)
-              : 0,
-            score: score,  // 保留已存在的分數，或使用新計算的分數
-            correctCount: correctQuestions,  // 保存正確題數
-          };
-          console.log(`✅ [updateProgress] 期數 ${series.name} 進度: ${completedQuestions}/${questions.length} (${result.completionPercentage}%)`);
-          return result;
-        })
-      );
-      
-      console.log(`💾 [updateProgress] 開始儲存更新後的進度到 AsyncStorage`);
-      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(updatedTestNames));
-      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(updatedSubjects));
-      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(updatedSeries));
-      console.log(`✅ [updateProgress] 進度已儲存到 AsyncStorage`);
-      
-      // 更新記憶體中的索引資料
-      this.indexData.testNames = updatedTestNames;
-      this.indexData.subjects = updatedSubjects;
-      this.indexData.series = updatedSeries;
-      console.log(`✅ [updateProgress] 記憶體中的索引資料已更新`);
+      console.log(`✅ [updateProgress] 進度更新完成`);
       console.log(`✅ [updateProgress] 進度更新完成`);
     } catch (error) {
       console.error('❌ [updateProgress] 更新進度統計失敗:', error);
@@ -1424,19 +1400,22 @@ class QuestionService {
       
       // 更新 series 的分數（使用 name 欄位來匹配 series_no）
       // 如果 subject 為 null，匹配沒有 subject 的 series
-      const seriesIndex = this.indexData.series.findIndex(
-        s => s.testName === testName && 
-             (subject !== null 
-               ? s.subject === subject 
-               : (!s.subject || s.subject === '')) && 
-             s.name === series_no
-      );
-      
-      if (seriesIndex !== -1) {
-        this.indexData.series[seriesIndex].score = score;
+      // 注意：series 欄位已廢棄，如果不存在則跳過
+      if (this.indexData.series && this.indexData.series.length > 0) {
+        const seriesIndex = this.indexData.series.findIndex(
+          s => s.testName === testName && 
+               (subject !== null 
+                 ? s.subject === subject 
+                 : (!s.subject || s.subject === '')) && 
+               s.name === series_no
+        );
         
-        // 保存到 AsyncStorage
-        await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series));
+        if (seriesIndex !== -1) {
+          this.indexData.series[seriesIndex].score = score;
+          
+          // 保存到 AsyncStorage
+          await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series));
+        }
       }
     } catch (error) {
       console.error('保存測驗分數失敗:', error);
@@ -1715,10 +1694,42 @@ class QuestionService {
     }
   }
 
+  // 清除所有錯題本（清除所有收藏）
+  async clearAllWrongBook(): Promise<void> {
+    try {
+      const userAnswers = await this.getUserAnswers();
+      let clearedCount = 0;
+      
+      // 清除所有收藏的題目
+      Object.keys(userAnswers).forEach(questionId => {
+        const answer = userAnswers[questionId];
+        if (answer && Boolean(answer.isFavorite)) {
+          // 清除收藏狀態和錯題本狀態
+          userAnswers[questionId] = {
+            ...answer,
+            isFavorite: false,
+            isInWrongBook: false,
+          };
+          clearedCount++;
+        }
+      });
+      
+      await AsyncStorage.setItem(USER_ANSWERS_KEY, JSON.stringify(userAnswers));
+      
+      // 更新進度統計
+      await this.updateProgress();
+      
+      console.log(`✅ 已清除所有錯題本（共 ${clearedCount} 題）`);
+    } catch (error) {
+      console.error('清除所有錯題本失敗:', error);
+      throw error;
+    }
+  }
+
   // 取得索引檔案中的 questionFiles
   async getQuestionFiles(): Promise<Array<{
-    testName: string;
-    subject: string;
+    testName?: string;
+    subject?: string;
     series_no: string;
     displayName?: string;
     file: string;
@@ -1766,44 +1777,64 @@ class QuestionService {
           f => f.file === fileInfo.file
         );
         if (!exists) {
-          this.indexData.questionFiles.push(fileInfo);
+          // 確保類型匹配：subject 為可選
+          const normalizedFileInfo = {
+            ...fileInfo,
+            subject: fileInfo.subject || undefined,  // 空字串轉為 undefined
+          };
+          this.indexData.questionFiles.push(normalizedFileInfo);
         }
       }
 
-      // 合併 testNames
-      for (const testName of importedData.testNames || []) {
-        const exists = this.indexData.testNames.some(
-          t => t.name === testName.name
-        );
-        if (!exists) {
-          this.indexData.testNames.push(testName);
+      // 合併 testNames（如果存在）
+      if (importedData.testNames && importedData.testNames.length > 0) {
+        if (!this.indexData.testNames) {
+          this.indexData.testNames = [];
+        }
+        for (const testName of importedData.testNames) {
+          const exists = this.indexData.testNames.some(
+            t => t.name === testName.name
+          );
+          if (!exists) {
+            this.indexData.testNames.push(testName);
+          }
         }
       }
 
-      // 合併 subjects
-      for (const subject of importedData.subjects || []) {
-        const exists = this.indexData.subjects.some(
-          s => s.id === subject.id
-        );
-        if (!exists) {
-          this.indexData.subjects.push(subject);
+      // 合併 subjects（如果存在）
+      if (importedData.subjects && importedData.subjects.length > 0) {
+        if (!this.indexData.subjects) {
+          this.indexData.subjects = [];
+        }
+        for (const subject of importedData.subjects) {
+          const exists = this.indexData.subjects.some(
+            s => s.id === subject.id
+          );
+          if (!exists) {
+            this.indexData.subjects.push(subject);
+          }
         }
       }
 
-      // 合併 series
-      for (const series of importedData.series || []) {
-        const exists = this.indexData.series.some(
-          s => s.id === series.id
-        );
-        if (!exists) {
-          this.indexData.series.push(series);
+      // 合併 series（如果存在）
+      if (importedData.series && importedData.series.length > 0) {
+        if (!this.indexData.series) {
+          this.indexData.series = [];
+        }
+        for (const series of importedData.series) {
+          const exists = this.indexData.series.some(
+            s => s.id === series.id
+          );
+          if (!exists) {
+            this.indexData.series.push(series);
+          }
         }
       }
 
       // 更新 AsyncStorage
-      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames));
-      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(this.indexData.subjects));
-      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series));
+      await AsyncStorage.setItem(TEST_NAMES_KEY, JSON.stringify(this.indexData.testNames || []));
+      await AsyncStorage.setItem(SUBJECTS_KEY, JSON.stringify(this.indexData.subjects || []));
+      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(this.indexData.series || []));
 
       console.log('✅ 成功合併匯入索引');
     } catch (error) {

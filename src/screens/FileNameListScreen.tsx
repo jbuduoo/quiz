@@ -38,6 +38,8 @@ interface FileNameItem {
   source?: string;
   completedCount?: number; // 已完成題數
   isWrongBook?: boolean; // 是否為錯題本項目
+  testName?: string; // 測驗名稱（用於索引檔案）
+  series_no?: string; // 期數（用於索引檔案）
 }
 
 const FileNameListScreen = () => {
@@ -52,7 +54,8 @@ const FileNameListScreen = () => {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const [appConfig, setAppConfig] = useState<{ enableImport: boolean; enableTrash: boolean } | null>(null);
+  const [appConfig, setAppConfig] = useState<{ enableImport: boolean; enableTrash: boolean; enableFavor: boolean } | null>(null);
+  const [appName, setAppName] = useState<string>('樂題庫'); // 預設值
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
   useEffect(() => {
@@ -66,14 +69,61 @@ const FileNameListScreen = () => {
       setAppConfig({
         enableImport: config.enableImport,
         enableTrash: config.enableTrash,
+        enableFavor: config.enableFavor,
       });
     } catch (error) {
       console.error('載入應用程式配置失敗:', error);
-      // 預設啟用所有功能
+      // 預設配置
       setAppConfig({
         enableImport: true,
         enableTrash: true,
+        enableFavor: false,
       });
+    }
+  };
+
+  const handleClearAllFavorites = async () => {
+    // 顯示確認對話框
+    const confirmMessage = '確定要取消所有我的最愛嗎？此操作無法復原。';
+    
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      if (window.confirm(confirmMessage)) {
+        try {
+          await QuestionService.clearAllWrongBook();
+          // 清除後重新載入資料
+          await loadData();
+        } catch (error) {
+          console.error('清除所有最愛失敗:', error);
+          Alert.alert('錯誤', '清除所有最愛時發生錯誤');
+        }
+      }
+    } else {
+      // 原生平台
+      Alert.alert(
+        '確認',
+        confirmMessage,
+        [
+          {
+            text: '取消',
+            style: 'cancel',
+          },
+          {
+            text: '確定',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await QuestionService.clearAllWrongBook();
+                // 清除後重新載入資料
+                await loadData();
+              } catch (error) {
+                console.error('清除所有最愛失敗:', error);
+                Alert.alert('錯誤', '清除所有最愛時發生錯誤');
+              }
+            },
+          },
+        ]
+      );
     }
   };
 
@@ -353,44 +403,122 @@ const FileNameListScreen = () => {
         const questionFiles = await QuestionService.getQuestionFiles();
         console.log(`📋 [FileNameListScreen] loadData: 找到 ${questionFiles.length} 個索引檔案`);
         
+        // 載入索引資料以取得根層級的 testName 和 appName
+        // 直接載入索引檔案來取得根層級的 testName 和 appName
+        let rootTestNameValue: string | undefined = undefined;
+        let appNameValue: string | undefined = undefined;
+        try {
+          const { default: VersionConfigService } = await import('../services/VersionConfigService');
+          const version = await VersionConfigService.getCurrentVersion();
+          const indexFileUrl = await VersionConfigService.getIndexFileUrl();
+          
+          // 在 React Native 平台使用 require，在 Web 平台使用 fetch
+          if (typeof window === 'undefined') {
+            // React Native 平台
+            try {
+              const indexData = require('../../assets/data/questions/questions.json');
+              rootTestNameValue = indexData?.testName;
+              // 讀取 appName：優先從根層級讀取，其次從 config.appName 讀取
+              appNameValue = indexData?.appName || indexData?.config?.appName;
+            } catch (error) {
+              console.warn('⚠️ [FileNameListScreen] 無法使用 require 載入索引:', error);
+            }
+          } else {
+            // Web 平台
+            const response = await fetch(indexFileUrl);
+            if (response.ok) {
+              const indexData = await response.json();
+              rootTestNameValue = indexData?.testName;
+              // 讀取 appName：優先從根層級讀取，其次從 config.appName 讀取
+              appNameValue = indexData?.appName || indexData?.config?.appName;
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [FileNameListScreen] loadData: 無法載入索引資料取得根層級 testName:', error);
+        }
+        
+        // 設定 appName
+        if (appNameValue) {
+          setAppName(appNameValue);
+        }
+        
         for (const fileInfo of questionFiles) {
           try {
             const fileName = fileInfo.file;
             console.log(`📋 [FileNameListScreen] loadData: 處理索引檔案: ${fileName}`);
             
-            // 載入題目檔案
-            let fileData: any;
+            // 載入題目檔案並標準化題目 ID（確保與答題時使用的 ID 格式一致）
+            let questions: Question[] = [];
             try {
-              fileData = await loadLocalQuestionFile(fileName);
+              // 取得 testName、subject、series_no（用於生成題目 ID）
+              const testNameForId = fileInfo.testName || rootTestNameValue || '';
+              const subjectForId = fileInfo.subject || null;
+              const seriesNoForId = fileInfo.series_no || '';
+              
+              // 載入題目檔案
+              const fileData = await loadLocalQuestionFile(fileName);
               if (!fileData) {
                 console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 載入失敗（檔案不存在或格式不正確）`);
                 continue;
               }
-              console.log(`✅ [FileNameListScreen] loadData: ${fileName} 載入成功`, {
-                isArray: Array.isArray(fileData),
-                hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
-                type: typeof fileData,
-                length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+              
+              // 解析題目資料
+              const isArray = Array.isArray(fileData);
+              const questionsArray = isArray ? fileData : (fileData.questions || []);
+              
+              if (questionsArray.length === 0) {
+                console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 沒有題目，跳過`);
+                continue;
+              }
+              
+              // 標準化題目格式，生成正確的題目 ID（使用 series_no + 題目檔案中的 Id）
+              questions = questionsArray.map((q: any, index: number) => {
+                // 生成題目 ID：使用 series_no + 題目檔案中的 Id 欄位
+                // 如果題目有 Id 欄位，使用它；否則使用 index + 1 作為備用
+                const questionIdFromFile = q.Id || q.id || String(index + 1);
+                const questionId = `${seriesNoForId}_${questionIdFromFile}`;
+                
+                // 移除問題開頭的編號
+                const rawContent = String(q.Q || q.content || '');
+                const cleanedContent = rawContent.replace(/^\d+\.?\s+/, '');
+                
+                // 處理 E 選項
+                const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+                  ? String(q.E) 
+                  : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+                    ? String(q.options.E)
+                    : undefined;
+                
+                return {
+                  id: questionId,
+                  content: cleanedContent,
+                  A: String(q.A || q.options?.A || ''),
+                  B: String(q.B || q.options?.B || ''),
+                  C: String(q.C || q.options?.C || ''),
+                  D: String(q.D || q.options?.D || ''),
+                  E: EValue,
+                  Ans: String(q.Ans || q.correctAnswer || 'A'),
+                  exp: String(q.Exp || q.exp || q.explanation || ''),
+                  questionNumber: index + 1,
+                  testName: testNameForId,
+                  subject: subjectForId || undefined,
+                  series_no: seriesNoForId,
+                  Type: q.Type,
+                } as Question;
               });
+              
+              console.log(`✅ [FileNameListScreen] loadData: ${fileName} 載入成功，題數: ${questions.length}`);
             } catch (loadError) {
               console.error(`❌ [FileNameListScreen] loadData: 載入 ${fileName} 失敗:`, loadError);
               continue;
             }
             
-            const isArray = Array.isArray(fileData);
-            const questions = isArray ? fileData : (fileData.questions || []);
-            
-            if (questions.length === 0) {
-              console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 沒有題目，跳過`);
-              continue;
-            }
-            
-            // 計算已完成題數
+            // 計算已完成題數（使用題目本身的 ID，確保格式一致）
             const userAnswers = await QuestionService.getUserAnswers();
             let completedCount = 0;
-            questions.forEach((q: any, index: number) => {
-              const questionId = `${fileName}_${index + 1}`;
-              const answer = userAnswers[questionId];
+            questions.forEach((q: Question) => {
+              // 直接使用題目本身的 ID，確保與答題時使用的 ID 一致
+              const answer = userAnswers[q.id];
               if (answer?.isAnswered) {
                 completedCount++;
               }
@@ -399,11 +527,25 @@ const FileNameListScreen = () => {
             // 使用 displayName 或生成顯示名稱
             const displayName = fileInfo.displayName || fileName;
             
+            // 取得 testName 和 series_no
+            const testName = fileInfo.testName || rootTestNameValue || '';
+            const series_no = fileInfo.series_no || '';
+            
             console.log(`📊 [FileNameListScreen] loadData: 索引檔案項目`, {
               fileName,
               displayName,
+              testName,
+              subject: fileInfo.subject,
+              series_no,
               fileCount: questions.length,
               completedCount,
+              sampleQuestionIds: questions.slice(0, 3).map(q => q.id),
+              sampleAnswers: questions.slice(0, 3).map(q => ({
+                questionId: q.id,
+                answer: userAnswers[q.id],
+                isAnswered: userAnswers[q.id]?.isAnswered,
+                selectedAnswer: userAnswers[q.id]?.selectedAnswer,
+              })),
             });
             
             fileItems.push({
@@ -414,6 +556,8 @@ const FileNameListScreen = () => {
               completedCount: completedCount,
               importDate: undefined,
               source: undefined,
+              testName: testName,
+              series_no: series_no,
             });
           } catch (error) {
             console.error(`❌ [FileNameListScreen] loadData: 處理索引檔案 ${fileInfo.file} 失敗:`, error);
@@ -768,19 +912,26 @@ const FileNameListScreen = () => {
         await AsyncStorage.setItem('@quiz:directQuestions', JSON.stringify(questions));
         console.log(`✅ [FileNameListScreen] handlePress: 題目已儲存到 AsyncStorage`);
         
-        // 導航到題目頁，使用 directFileName 參數標識這是直接載入的檔案
+        // 導航到題目頁
+        // 如果是索引檔案（有 series_no 且不是匯入檔案），使用正確的參數；否則使用 DIRECT_FILE
+        // 判斷邏輯：如果有 series_no 且不是匯入檔案（不以 questions/ 開頭），則視為索引檔案
+        const isIndexFile = !!(item.series_no && !item.fileName.startsWith('questions/'));
+        const navigationTestName = isIndexFile ? (item.testName || 'GOVERNMENT_PROCUREMENT') : 'DIRECT_FILE';
+        const navigationSeriesNo = isIndexFile ? item.series_no! : item.fileName;
+        
         console.log(`🚀 [FileNameListScreen] handlePress: 準備導航到測驗頁面`, {
-          testName: 'DIRECT_FILE',
+          isIndexFile,
+          testName: navigationTestName,
           subject: '',
-          series_no: item.fileName,
-          directFileName: item.fileName,
+          series_no: navigationSeriesNo,
+          directFileName: isIndexFile ? undefined : item.fileName,
         });
         
         navigation.navigate('Quiz', {
-          testName: 'DIRECT_FILE',
+          testName: navigationTestName,
           subject: '',
-          series_no: item.fileName,
-          directFileName: item.fileName,
+          series_no: navigationSeriesNo,
+          ...(isIndexFile ? {} : { directFileName: item.fileName }),
         });
         
         console.log(`✅ [FileNameListScreen] handlePress: 已導航到測驗頁面`);
@@ -1155,11 +1306,28 @@ const FileNameListScreen = () => {
             },
           ]}
         >
-          樂題庫
+          {appName}
         </Text>
         <View style={styles.headerRight}>
           {!isDeleteMode ? (
             <>
+              {appConfig?.enableFavor && (
+                <TouchableOpacity
+                  onPress={handleClearAllFavorites}
+                  style={[styles.headerButton, styles.clearAllButton]}
+                >
+                  <Text
+                    style={[
+                      styles.clearAllButtonText,
+                      {
+                        color: colors.headerText,
+                      },
+                    ]}
+                  >
+                    清除最愛
+                  </Text>
+                </TouchableOpacity>
+              )}
               {appConfig?.enableTrash && (
                 <TouchableOpacity
                   onPress={() => setIsDeleteMode(true)}
@@ -1583,6 +1751,21 @@ const styles = StyleSheet.create({
   },
   headerIcon: {
     fontSize: 18,
+  },
+  clearAllButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    minWidth: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearAllButtonText: {
+    fontWeight: '700',
+    fontSize: 12,
   },
   listContent: {
     padding: 16,

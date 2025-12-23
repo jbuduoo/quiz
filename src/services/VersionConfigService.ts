@@ -2,9 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 const VERSION_CONFIG_KEY = '@quiz:versionConfig';
-const VERSION_CONFIG_FILE = '/assets/config/version.config.json';
 
-// 預設版本
+// 預設版本（已簡化，不再需要版本概念）
 const DEFAULT_VERSION = 'default';
 
 class VersionConfigService {
@@ -12,54 +11,11 @@ class VersionConfigService {
   private initialized = false;
 
   /**
-   * 從檔案載入版本設定
+   * 從檔案載入版本設定（已簡化，不再需要版本檔案）
    */
   private async loadVersionFromFile(): Promise<string | null> {
-    try {
-      // 優先使用 require（在所有平台，包括 Web）
-      // Metro bundler 在 Web 平台也會處理 require
-      try {
-        const config = require('../../assets/config/version.config.json');
-        if (config && config.currentVersion) {
-          console.log(`✅ [VersionConfig] 從檔案載入版本 (require): ${config.currentVersion}`);
-          return config.currentVersion;
-        }
-      } catch (requireError) {
-        console.warn('⚠️ [VersionConfig] 無法使用 require 載入版本配置:', requireError);
-        
-        // 如果 require 失敗，在 Web 平台嘗試使用 fetch（備用方案）
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          try {
-            // 嘗試多個可能的路徑
-            const possiblePaths = [
-              '/assets/config/version.config.json',
-              './assets/config/version.config.json',
-              '/assets/assets/config/version.config.json',
-            ];
-            
-            for (const path of possiblePaths) {
-              try {
-                const response = await fetch(`${path}?t=${Date.now()}`);
-                if (response.ok) {
-                  const config = await response.json();
-                  if (config && config.currentVersion) {
-                    console.log(`✅ [VersionConfig] 從檔案載入版本 (fetch: ${path}): ${config.currentVersion}`);
-                    return config.currentVersion;
-                  }
-                }
-              } catch (fetchError) {
-                // 繼續嘗試下一個路徑
-                continue;
-              }
-            }
-          } catch (error) {
-            console.warn('⚠️ [VersionConfig] 無法使用 fetch 載入版本配置:', error);
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ [VersionConfig] 載入版本配置檔案失敗:', error);
-    }
+    // 不再需要從檔案載入版本，直接返回 null
+    // 版本概念已移除，所有配置都在 questions.json 中
     return null;
   }
 
@@ -159,8 +115,7 @@ class VersionConfigService {
    * 取得題目資料目錄路徑（運行時）
    */
   async getQuestionsDataPath(): Promise<string> {
-    const version = await this.getCurrentVersion();
-    return `assets/data/questions/versions/${version}`;
+    return `assets/data/questions`;
   }
 
   /**
@@ -168,16 +123,14 @@ class VersionConfigService {
    * 注意：Metro bundler 需要靜態路徑，實際使用時會透過版本映射
    */
   async getIndexFilePath(): Promise<string> {
-    const version = await this.getCurrentVersion();
-    return `../../assets/data/questions/versions/${version}/questions.json`;
+    return `../../assets/data/questions/questions.json`;
   }
 
   /**
    * 取得索引檔案 URL（Web fetch 路徑）
    */
   async getIndexFileUrl(): Promise<string> {
-    const version = await this.getCurrentVersion();
-    return `/assets/assets/data/questions/versions/${version}/questions.json`;
+    return `/assets/assets/data/questions/questions.json`;
   }
 
   /**

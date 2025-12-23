@@ -466,6 +466,55 @@ const WrongBookScreen = () => {
     }
   };
 
+  const handleClearAllFavorites = async () => {
+    // 顯示確認對話框
+    const confirmMessage = '確定要取消所有我的最愛嗎？此操作無法復原。';
+    
+    if (typeof window !== 'undefined') {
+      // Web 平台
+      if (window.confirm(confirmMessage)) {
+        try {
+          await QuestionService.clearAllWrongBook();
+          // 清除後重新載入資料
+          await loadData();
+          // 返回上一頁（因為沒有題目了）
+          navigation.goBack();
+        } catch (error) {
+          console.error('清除所有最愛失敗:', error);
+          Alert.alert('錯誤', '清除所有最愛時發生錯誤');
+        }
+      }
+    } else {
+      // 原生平台
+      Alert.alert(
+        '確認',
+        confirmMessage,
+        [
+          {
+            text: '取消',
+            style: 'cancel',
+          },
+          {
+            text: '確定',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await QuestionService.clearAllWrongBook();
+                // 清除後重新載入資料
+                await loadData();
+                // 返回上一頁（因為沒有題目了）
+                navigation.goBack();
+              } catch (error) {
+                console.error('清除所有最愛失敗:', error);
+                Alert.alert('錯誤', '清除所有最愛時發生錯誤');
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -488,8 +537,18 @@ const WrongBookScreen = () => {
               resizeMode="contain"
             />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>複習錯題頁面</Text>
-          <View style={styles.headerRight} />
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              複習錯題頁面
+            </Text>
+          </View>
+          <View style={styles.headerRightContainer} />
+          <TouchableOpacity
+            style={styles.clearAllButton}
+            onPress={handleClearAllFavorites}
+          >
+            <Text style={styles.clearAllButtonText}>清除全部</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.emptyContainer}>
@@ -522,7 +581,15 @@ const WrongBookScreen = () => {
             複習錯題頁面
           </Text>
         </View>
-        <Text style={styles.progressText}>{progress}</Text>
+        <View style={styles.headerRightContainer}>
+          <Text style={styles.progressText}>{progress}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.clearAllButton}
+          onPress={handleClearAllFavorites}
+        >
+          <Text style={styles.clearAllButtonText}>清除全部</Text>
+        </TouchableOpacity>
       </View>
 
 
@@ -878,11 +945,33 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
-    minWidth: 60,
+    minWidth: 50,
     textAlign: 'right',
+  },
+  headerRightContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   headerRight: {
     width: 40,
+  },
+  clearAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 70,
+    height: 32,
+  },
+  clearAllButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   content: {
     flex: 1,

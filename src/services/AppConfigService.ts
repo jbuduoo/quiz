@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import VersionConfigService from './VersionConfigService';
 
 const APP_CONFIG_KEY = '@quiz:appConfig';
 
@@ -8,14 +7,16 @@ export interface AppConfig {
   appName: string;
   enableImport: boolean;
   enableTrash: boolean;
+  enableFavor: boolean;
   questionsPath: string;
-  version: string;
+  version: string;  // configVersion 的別名（向後相容）
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   appName: 'WITS證照考試題庫',
   enableImport: true,
   enableTrash: true,
+  enableFavor: false,
   questionsPath: 'default',
   version: 'default',
 };
@@ -25,7 +26,142 @@ class AppConfigService {
   private initialized = false;
 
   /**
-   * 從檔案載入配置
+   * 從 questions.json 載入配置（優先）
+   */
+  private async loadConfigFromQuestionsJson(): Promise<AppConfig | null> {
+    try {
+      // 優先直接載入 questions.json（不依賴 QuestionService）
+      if (Platform.OS !== 'web') {
+        try {
+          const questionsData = require('../../assets/data/questions/questions.json');
+          const configData = questionsData?.config;
+          
+          // 支援新格式（扁平化）和舊格式（嵌套）
+          let appConfig: any = null;
+          if (configData) {
+            // 新格式：扁平化結構
+            if (configData.appName !== undefined) {
+              appConfig = {
+                appName: configData.appName,
+                enableImport: configData.enableImport,
+                enableTrash: configData.enableTrash,
+                enableFavor: configData.enableFavor !== undefined ? configData.enableFavor : false,
+                questionsPath: configData.configVersion || configData.questionsPath || 'default',
+                version: configData.configVersion || 'default',
+              };
+            } 
+            // 舊格式：嵌套結構
+            else if (configData.appConfig) {
+              appConfig = configData.appConfig;
+            }
+          }
+          // 向後相容：頂層 appConfig
+          else if (questionsData?.appConfig) {
+            appConfig = questionsData.appConfig;
+          }
+          
+          if (appConfig) {
+            const config = {
+              ...DEFAULT_CONFIG,
+              ...appConfig,
+            };
+            console.log(`✅ [AppConfig] 從 questions.json 載入配置:`, config);
+            return config;
+          }
+        } catch (error) {
+          console.warn(`⚠️ [AppConfig] 無法從 questions.json require 載入配置:`, error);
+        }
+      }
+      
+      // Web 平台使用 fetch
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const questionsJsonPath = `/assets/assets/data/questions/questions.json`;
+          const response = await fetch(`${questionsJsonPath}?t=${Date.now()}`);
+          if (response.ok) {
+            const questionsData = await response.json();
+            const configData = questionsData?.config;
+            
+            // 支援新格式（扁平化）和舊格式（嵌套）
+            let appConfig: any = null;
+            if (configData) {
+              // 新格式：扁平化結構
+              if (configData.appName !== undefined) {
+                appConfig = {
+                  appName: configData.appName,
+                  enableImport: configData.enableImport,
+                  enableTrash: configData.enableTrash,
+                  enableFavor: configData.enableFavor !== undefined ? configData.enableFavor : false,
+                  questionsPath: configData.configVersion || configData.questionsPath || 'default',
+                  version: configData.configVersion || 'default',
+                };
+              } 
+              // 舊格式：嵌套結構
+              else if (configData.appConfig) {
+                appConfig = configData.appConfig;
+              }
+            }
+            // 向後相容：頂層 appConfig
+            else if (questionsData?.appConfig) {
+              appConfig = questionsData.appConfig;
+            }
+            
+            if (appConfig) {
+              const config = {
+                ...DEFAULT_CONFIG,
+                ...appConfig,
+              };
+              console.log(`✅ [AppConfig] 從 questions.json 載入配置:`, config);
+              return config;
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [AppConfig] 無法從 questions.json fetch 載入配置:`, error);
+        }
+      }
+      
+      // 如果直接載入失敗，嘗試從 QuestionService 的索引資料中取得配置（如果已載入）
+      // 注意：QuestionService 已經會展開 config 物件並建立 appConfig，所以這裡直接訪問即可
+      try {
+        const { default: QuestionService } = await import('./QuestionService');
+        const indexData = (QuestionService as any).indexData;
+        
+        if (indexData) {
+          // 優先使用 appConfig（已由 expandConfig 建立），否則從扁平化欄位建立
+          let appConfig: any = null;
+          if (indexData.appConfig) {
+            appConfig = indexData.appConfig;
+          } else if (indexData.appName !== undefined) {
+            appConfig = {
+              appName: indexData.appName,
+              enableImport: indexData.enableImport,
+              enableTrash: indexData.enableTrash,
+              enableFavor: indexData.enableFavor !== undefined ? indexData.enableFavor : false,
+              questionsPath: indexData.configVersion || 'default',
+              version: indexData.configVersion || 'default',
+            };
+          }
+          
+          if (appConfig) {
+            const config = {
+              ...DEFAULT_CONFIG,
+              ...appConfig,
+            };
+            console.log(`✅ [AppConfig] 從 QuestionService.indexData 載入配置:`, config);
+            return config;
+          }
+        }
+      } catch (error) {
+        // 忽略錯誤，繼續嘗試其他方法
+      }
+    } catch (error) {
+      console.warn(`⚠️ [AppConfig] 從 questions.json 載入配置失敗:`, error);
+    }
+    return null;
+  }
+
+  /**
+   * 從獨立檔案載入配置（向後相容）
    */
   private async loadConfigFromFile(version: string): Promise<AppConfig | null> {
     try {
@@ -47,7 +183,7 @@ class AppConfigService {
               version,
               questionsPath: version
             };
-            console.log(`✅ [AppConfig] 從檔案載入配置 (${version}):`, config);
+            console.log(`✅ [AppConfig] 從獨立檔案載入配置 (${version}):`, config);
             return config;
           }
         } catch (error) {
@@ -69,7 +205,7 @@ class AppConfigService {
               version,
               questionsPath: version
             };
-            console.log(`✅ [AppConfig] 從檔案載入配置 (${version}):`, config);
+            console.log(`✅ [AppConfig] 從獨立檔案載入配置 (${version}):`, config);
             return config;
           }
         } catch (error) {
@@ -88,18 +224,14 @@ class AppConfigService {
     }
 
     try {
-      // 先取得當前版本
-      const version = await VersionConfigService.getCurrentVersion();
-      console.log(`📋 [AppConfig] 當前版本: ${version}`);
-
-      // 優先從檔案載入配置
-      const fileConfig = await this.loadConfigFromFile(version);
-      if (fileConfig) {
-        this.config = fileConfig;
+      // 優先從 questions.json 載入配置
+      const questionsJsonConfig = await this.loadConfigFromQuestionsJson();
+      if (questionsJsonConfig) {
+        this.config = questionsJsonConfig;
         // 更新 AsyncStorage 以保持同步
         await this.saveConfig(this.config);
         this.initialized = true;
-        console.log('✅ [AppConfig] 使用檔案配置:', this.config);
+        console.log('✅ [AppConfig] 使用 questions.json 配置:', this.config);
         return this.config;
       }
 
@@ -108,27 +240,17 @@ class AppConfigService {
         const localConfig = await AsyncStorage.getItem(APP_CONFIG_KEY);
         if (localConfig) {
           const parsed = JSON.parse(localConfig);
-          // 檢查版本是否一致
-          if (parsed.version === version) {
-            this.config = parsed;
-            this.initialized = true;
-            console.log('✅ [AppConfig] 從本地儲存載入配置:', this.config);
-            return this.config;
-          } else {
-            // 版本不一致，需要重新載入
-            console.log(`🔄 [AppConfig] 版本已變更: ${parsed.version} -> ${version}，重新載入配置`);
-          }
+          this.config = parsed;
+          this.initialized = true;
+          console.log('✅ [AppConfig] 從本地儲存載入配置:', this.config);
+          return this.config;
         }
       } catch (error) {
         console.warn('⚠️ [AppConfig] 無法從 AsyncStorage 載入配置:', error);
       }
 
-      // 使用預設配置（帶版本資訊）
-      this.config = {
-        ...DEFAULT_CONFIG,
-        version,
-        questionsPath: version
-      };
+      // 使用預設配置
+      this.config = DEFAULT_CONFIG;
       await this.saveConfig(this.config);
       this.initialized = true;
       console.log('✅ [AppConfig] 使用預設配置:', this.config);

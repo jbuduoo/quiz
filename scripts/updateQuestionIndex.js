@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const questionsBaseDir = path.join(__dirname, '..', 'assets', 'data', 'questions');
-const indexFile = path.join(__dirname, '..', 'assets', 'data', 'questions.json');
-const questionFileMapFile = path.join(__dirname, '..', 'src', 'services', 'questionFileMap.ts');
+const indexFile = path.join(__dirname, '..', 'assets', 'data', 'questions', 'questions.json');
 
 // 遞迴掃描資料夾結構
 function scanQuestionFolders(dir, basePath = '') {
@@ -178,23 +177,4 @@ console.log(`   測驗名稱: ${testNamesMap.size} 個`);
 console.log(`   科目: ${subjectsMap.size} 個`);
 console.log(`   期數: ${seriesMap.size} 個`);
 
-// 生成 questionFileMap.ts（使用新的路徑格式）
-const mapEntries = questionFiles.map(qf => {
-  // 路徑格式: questions/IPAS_01/L11/11401.json
-  // require 路徑: ../../assets/data/questions/IPAS_01/L11/11401.json
-  const requirePath = qf.file.replace('questions/', '../../assets/data/questions/');
-  return `  '${qf.file}': () => require('${requirePath}'),`;
-}).join('\n');
-
-const mapContent = `// 此檔案由 scripts/updateQuestionIndex.js 自動生成
-// 請勿手動編輯此檔案
-
-import { QuestionFileData } from './QuestionService';
-
-export const questionFileMap: Record<string, () => QuestionFileData> = {
-${mapEntries}
-};
-`;
-
-fs.writeFileSync(questionFileMapFile, mapContent, 'utf8');
-console.log(`✅ 已更新映射檔案: ${questionFileMapFile}`);
+// 注意：questionFileMap.ts 已移除，現在使用直接讀取檔案的方式

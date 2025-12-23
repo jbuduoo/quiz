@@ -12,9 +12,9 @@ export interface Question {
   E?: string;                     // 選項 E（可選，用於複選題）
   Ans: 'A' | 'B' | 'C' | 'D' | 'E' | string;    // 正確答案（支援單選、複選如 "A,B"）
   exp: string;                    // 詳解
-  testName?: string;              // 測驗名稱（例如：信託營業員）- 可選，通常從檔案 metadata 取得
-  subject?: string;               // 所屬科目（例如：信託法規）- 可選，通常從檔案 metadata 取得
-  series_no?: string;             // 期數（例如：61期）- 可選，通常從檔案 metadata 取得
+  testName?: string;              // 測驗名稱 - 可選，通常從檔案 metadata 取得
+  subject?: string;               // 所屬科目 - 可選，通常從檔案 metadata 取得
+  series_no?: string;             // 期數
   chapter?: string;              // 所屬章節（可選，保留向後相容）
   questionNumber?: number;        // 在該期數中的題號（從1開始）
   Type?: QuestionType;           // 題目類型（可選，用於新格式，如果沒有則根據選項推斷）

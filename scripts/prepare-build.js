@@ -1,58 +1,51 @@
 const fs = require('fs');
 const path = require('path');
 
-// 讀取版本配置
-const versionConfigPath = path.join(__dirname, '../assets/config/version.config.json');
-let versionConfig;
+console.log('📦 準備建置...');
 
-try {
-  const versionConfigContent = fs.readFileSync(versionConfigPath, 'utf8');
-  versionConfig = JSON.parse(versionConfigContent);
-} catch (error) {
-  console.error('❌ 無法讀取 version.config.json:', error);
-  console.error('   請確認檔案存在於: assets/config/version.config.json');
-  process.exit(1);
-}
+// 驗證必要的檔案是否存在
+const questionsJsonPath = path.join(__dirname, '../assets/data/questions/questions.json');
 
-const currentVersion = versionConfig.currentVersion || 'default';
-console.log(`📦 準備建置版本: ${currentVersion}`);
+console.log('\n📋 驗證檔案...');
 
-// 驗證版本目錄是否存在
-const versionsConfigDir = path.join(__dirname, '../assets/config/versions', currentVersion);
-const versionsQuestionsDir = path.join(__dirname, '../assets/data/questions/versions', currentVersion);
-
-console.log('\n📋 驗證版本目錄...');
-
-if (!fs.existsSync(versionsConfigDir)) {
-  console.error(`❌ 版本配置目錄不存在: ${versionsConfigDir}`);
-  console.error(`   請確認版本 "${currentVersion}" 的配置目錄存在`);
-  process.exit(1);
-}
-console.log(`✅ 配置目錄存在: ${versionsConfigDir}`);
-
-if (!fs.existsSync(versionsQuestionsDir)) {
-  console.error(`❌ 版本題目目錄不存在: ${versionsQuestionsDir}`);
-  console.error(`   請確認版本 "${currentVersion}" 的題目目錄存在`);
-  process.exit(1);
-}
-console.log(`✅ 題目目錄存在: ${versionsQuestionsDir}`);
-
-// 檢查必要的檔案是否存在
-const questionsJsonPath = path.join(versionsQuestionsDir, 'questions.json');
 if (!fs.existsSync(questionsJsonPath)) {
-  console.warn(`⚠️  警告: questions.json 不存在於 ${versionsQuestionsDir}`);
+  console.error(`❌ questions.json 不存在: ${questionsJsonPath}`);
+  console.error(`   請確認檔案存在於: assets/data/questions/questions.json`);
+  process.exit(1);
+}
+console.log(`✅ questions.json 存在: ${questionsJsonPath}`);
+
+// 驗證 questions.json 格式
+try {
+  const questionsData = JSON.parse(fs.readFileSync(questionsJsonPath, 'utf8'));
+  if (!questionsData.questionFiles || !Array.isArray(questionsData.questionFiles)) {
+    console.warn(`⚠️  警告: questions.json 格式不完整（缺少 questionFiles）`);
+  } else {
+    console.log(`✅ questions.json 格式正確（${questionsData.questionFiles.length} 個題目檔案）`);
+  }
+  
+  // 驗證每個題目檔案是否存在
+  if (questionsData.questionFiles && Array.isArray(questionsData.questionFiles)) {
+    const questionsDir = path.join(__dirname, '../assets/data/questions');
+    let missingFiles = [];
+    
+    questionsData.questionFiles.forEach(fileInfo => {
+      const filePath = path.join(questionsDir, fileInfo.file);
+      if (!fs.existsSync(filePath)) {
+        missingFiles.push(fileInfo.file);
+      }
+    });
+    
+    if (missingFiles.length > 0) {
+      console.warn(`⚠️  警告: 以下題目檔案不存在:`);
+      missingFiles.forEach(file => console.warn(`   - ${file}`));
+    } else {
+      console.log(`✅ 所有題目檔案都存在`);
+    }
+  }
+} catch (error) {
+  console.error(`❌ 無法解析 questions.json: ${error.message}`);
+  process.exit(1);
 }
 
-const appConfigPath = path.join(versionsConfigDir, 'app-config.json');
-if (!fs.existsSync(appConfigPath)) {
-  console.warn(`⚠️  警告: app-config.json 不存在於 ${versionsConfigDir}`);
-}
-
-const quizLibraryConfigPath = path.join(versionsConfigDir, 'quiz-library-config.json');
-if (!fs.existsSync(quizLibraryConfigPath)) {
-  console.warn(`⚠️  警告: quiz-library-config.json 不存在於 ${versionsConfigDir}`);
-}
-
-console.log(`\n✅ 版本驗證完成！當前版本: ${currentVersion}`);
-console.log(`   打包時會包含所有版本的目錄`);
-
+console.log(`\n✅ 驗證完成！`);

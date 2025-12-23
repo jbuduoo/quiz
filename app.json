@@ -7,14 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
-      "**/*",
       "assets/*.png",
-      "assets/data/questions/versions/**/*.json",
-      "assets/config/versions/**/*.json",
-      "assets/config/version.config.json",
-      "assets/images/**/*.png",
-      "assets/images/**/*.jpg",
-      "assets/images/**/*.jpeg"
+      "assets/data/questions/*.json"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",

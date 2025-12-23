@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -61,10 +61,101 @@ const QuizScreen = () => {
     totalCount: number;
     score: number;
   } | null>(null);
+  const [seriesDisplayName, setSeriesDisplayName] = useState<string | null>(null);
+  const [questionFilesCache, setQuestionFilesCache] = useState<Array<{
+    testName?: string;
+    subject?: string;
+    series_no: string;
+    displayName?: string;
+    file: string;
+    count: number;
+  }>>([]);
 
   useEffect(() => {
     loadQuestions();
   }, []);
+
+  // 載入 displayName 和 questionFiles（獨立於題目載入）
+  useEffect(() => {
+    const loadDisplayName = async () => {
+      // 只有在非直接檔案載入模式下才需要載入 displayName
+      // 如果有 directFileName 且 testName 是 'DIRECT_FILE'，則跳過
+      if (directFileName && testName === 'DIRECT_FILE') {
+        console.log(`📋 [QuizScreen] loadDisplayName: 跳過載入（直接檔案模式）`, {
+          directFileName,
+          testName
+        });
+        return;
+      }
+      
+      if (!series_no) {
+        console.warn(`⚠️ [QuizScreen] loadDisplayName: series_no 為空，跳過載入`);
+        return;
+      }
+      
+      try {
+        console.log(`📋 [QuizScreen] loadDisplayName: 開始載入 displayName`, {
+          series_no,
+          directFileName,
+          testName
+        });
+        const questionFiles = await QuestionService.getQuestionFiles();
+        console.log(`📋 [QuizScreen] loadDisplayName: 找到 ${questionFiles.length} 個檔案`, {
+          questionFiles: questionFiles.map(f => ({
+            series_no: f.series_no,
+            displayName: f.displayName,
+            file: f.file
+          }))
+        });
+        setQuestionFilesCache(questionFiles); // 緩存 questionFiles
+        const fileInfo = questionFiles.find(f => f.series_no === series_no);
+        console.log(`📋 [QuizScreen] loadDisplayName: 查找結果`, {
+          series_no,
+          found: !!fileInfo,
+          displayName: fileInfo?.displayName,
+          allSeriesNos: questionFiles.map(f => f.series_no),
+          fileInfo: fileInfo ? {
+            series_no: fileInfo.series_no,
+            displayName: fileInfo.displayName,
+            file: fileInfo.file
+          } : null
+        });
+        if (fileInfo && fileInfo.displayName) {
+          console.log(`✅ [QuizScreen] loadDisplayName: 設置 displayName 為 ${fileInfo.displayName}`);
+          setSeriesDisplayName(fileInfo.displayName);
+        } else {
+          console.warn(`⚠️ [QuizScreen] loadDisplayName: 未找到對應的 displayName`, {
+            series_no,
+            availableSeriesNos: questionFiles.map(f => f.series_no)
+          });
+        }
+      } catch (error) {
+        console.error('❌ [QuizScreen] 無法讀取 displayName:', error);
+      }
+    };
+    loadDisplayName();
+  }, [series_no, directFileName, testName]);
+
+  // 在渲染時從緩存中查找 displayName（作為後備）
+  const currentDisplayName = useMemo(() => {
+    if (seriesDisplayName) {
+      console.log(`📋 [QuizScreen] useMemo: 使用 seriesDisplayName: ${seriesDisplayName}`);
+      return seriesDisplayName;
+    }
+    if (questionFilesCache.length > 0) {
+      const fileInfo = questionFilesCache.find(f => f.series_no === series_no);
+      const displayName = fileInfo?.displayName || null;
+      console.log(`📋 [QuizScreen] useMemo: 從緩存查找`, {
+        series_no,
+        found: !!fileInfo,
+        displayName,
+        cacheLength: questionFilesCache.length
+      });
+      return displayName;
+    }
+    console.log(`📋 [QuizScreen] useMemo: 緩存為空，返回 null`);
+    return null;
+  }, [seriesDisplayName, questionFilesCache, series_no]);
 
   useEffect(() => {
     if (questions.length > 0) {
@@ -924,7 +1015,30 @@ const QuizScreen = () => {
                   : displayName;
               }
               
-              // 一般模式：顯示 subject 和 series_no
+              // 一般模式：顯示 displayName（如果有的話），否則顯示 subject 和 series_no
+              // 優先使用 currentDisplayName，如果沒有則從緩存中查找
+              let finalDisplayName = currentDisplayName;
+              if (!finalDisplayName && questionFilesCache.length > 0) {
+                const fileInfo = questionFilesCache.find(f => f.series_no === series_no);
+                finalDisplayName = fileInfo?.displayName || null;
+              }
+              
+              console.log(`📋 [QuizScreen] 渲染標題`, {
+                currentDisplayName,
+                seriesDisplayName,
+                questionFilesCacheLength: questionFilesCache.length,
+                finalDisplayName,
+                series_no,
+                subject
+              });
+              
+              if (finalDisplayName) {
+                console.log(`✅ [QuizScreen] 使用 displayName: ${finalDisplayName}`);
+                return isReviewModeBool 
+                  ? `檢視 - ${finalDisplayName}` 
+                  : finalDisplayName;
+              }
+              console.log(`⚠️ [QuizScreen] 使用後備: ${subject ? `${subject} ` : ''}${series_no}`);
               return isReviewModeBool 
                 ? `檢視 - ${subject ? `${subject} ` : ''}${series_no}` 
                 : `${subject ? `${subject} ` : ''}${series_no}`;

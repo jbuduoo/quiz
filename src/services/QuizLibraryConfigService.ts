@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import VersionConfigService from './VersionConfigService';
 
 const QUIZ_LIBRARY_CONFIG_KEY = '@quiz:libraryConfig';
 
@@ -40,7 +39,165 @@ class QuizLibraryConfigService {
   private configFileExists: boolean | null = null; // null: 未檢查, true: 存在, false: 不存在
 
   /**
-   * 從檔案載入配置
+   * 標準化配置格式：將物件或陣列統一轉換為陣列
+   */
+  private normalizeConfig(config: QuizLibraryConfig | QuizLibraryConfig[] | null | undefined): QuizLibraryConfig[] | null {
+    if (!config) {
+      return null;
+    }
+    
+    // 如果是陣列，直接返回
+    if (Array.isArray(config)) {
+      return config;
+    }
+    
+    // 如果是物件，轉換為陣列
+    if (typeof config === 'object' && config !== null && 'testName' in config) {
+      return [config as QuizLibraryConfig];
+    }
+    
+    return null;
+  }
+
+  /**
+   * 從 questions.json 載入配置（優先）
+   */
+  private async loadConfigFromQuestionsJson(): Promise<QuizLibraryConfig[] | null> {
+    try {
+      // 優先直接載入 questions.json（不依賴 QuestionService）
+      if (Platform.OS !== 'web') {
+        try {
+          const questionsData = require('../../assets/data/questions/questions.json');
+          const configData = questionsData?.config;
+          
+          // 支援新格式（扁平化）和舊格式（嵌套）
+          let quizLibraryConfig: any = null;
+          if (configData) {
+            // 新格式：扁平化結構
+            if (configData.displayName !== undefined) {
+              quizLibraryConfig = {
+                testName: configData.testName,
+                enabled: configData.enabled !== undefined ? configData.enabled : true, // 預設為 true（啟用）
+                displayName: configData.displayName,
+                displayOrder: configData.displayOrder,
+              };
+            } 
+            // 舊格式：嵌套結構
+            else if (configData.quizLibraryConfig) {
+              quizLibraryConfig = configData.quizLibraryConfig;
+            }
+          }
+          // 向後相容：頂層 quizLibraryConfig
+          else if (questionsData?.quizLibraryConfig) {
+            quizLibraryConfig = questionsData.quizLibraryConfig;
+          }
+          
+          if (quizLibraryConfig) {
+            const normalized = this.normalizeConfig(quizLibraryConfig);
+            if (normalized) {
+              console.log(`✅ [QuizLibraryConfig] 從 questions.json 載入配置:`, normalized);
+              return normalized;
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [QuizLibraryConfig] 無法從 questions.json require 載入配置:`, error);
+        }
+      }
+      
+      // Web 平台使用 fetch
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const questionsJsonPath = `/assets/assets/data/questions/questions.json`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          
+          const response = await fetch(`${questionsJsonPath}?t=${Date.now()}`, {
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const questionsData = await response.json();
+            const configData = questionsData?.config;
+            
+            // 支援新格式（扁平化）和舊格式（嵌套）
+            let quizLibraryConfig: any = null;
+            if (configData) {
+              // 新格式：扁平化結構
+              if (configData.displayName !== undefined) {
+                quizLibraryConfig = {
+                  testName: configData.testName,
+                  enabled: configData.enabled,
+                  displayName: configData.displayName,
+                  displayOrder: configData.displayOrder,
+                };
+              } 
+              // 舊格式：嵌套結構
+              else if (configData.quizLibraryConfig) {
+                quizLibraryConfig = configData.quizLibraryConfig;
+              }
+            }
+            // 向後相容：頂層 quizLibraryConfig
+            else if (questionsData?.quizLibraryConfig) {
+              quizLibraryConfig = questionsData.quizLibraryConfig;
+            }
+            
+            if (quizLibraryConfig) {
+              const normalized = this.normalizeConfig(quizLibraryConfig);
+              if (normalized) {
+                console.log(`✅ [QuizLibraryConfig] 從 questions.json 載入配置:`, normalized);
+                return normalized;
+              }
+            }
+          }
+        } catch (error: any) {
+          if (error?.name === 'AbortError' || error?.message?.includes('404') || error?.name === 'TypeError') {
+            // 檔案不存在，繼續嘗試其他方法
+          }
+          console.warn(`⚠️ [QuizLibraryConfig] 無法從 questions.json fetch 載入配置:`, error);
+        }
+      }
+      
+      // 如果直接載入失敗，嘗試從 QuestionService 的索引資料中取得配置（如果已載入）
+      // 注意：QuestionService 已經會展開 config 物件並建立 quizLibraryConfig，所以這裡直接訪問即可
+      try {
+        const { default: QuestionService } = await import('./QuestionService');
+        const indexData = (QuestionService as any).indexData;
+        
+        if (indexData) {
+          // 優先使用 quizLibraryConfig（已由 expandConfig 建立），否則從扁平化欄位建立
+          let quizLibraryConfig: any = null;
+          if (indexData.quizLibraryConfig) {
+            quizLibraryConfig = indexData.quizLibraryConfig;
+          } else if (indexData.displayName !== undefined) {
+            quizLibraryConfig = {
+              testName: indexData.testName,
+              enabled: indexData.enabled !== undefined ? indexData.enabled : true, // 預設為 true（啟用）
+              displayName: indexData.displayName,
+              displayOrder: indexData.displayOrder,
+            };
+          }
+          
+          if (quizLibraryConfig) {
+            const normalized = this.normalizeConfig(quizLibraryConfig);
+            if (normalized) {
+              console.log(`✅ [QuizLibraryConfig] 從 QuestionService.indexData 載入配置:`, normalized);
+              return normalized;
+            }
+          }
+        }
+      } catch (error) {
+        // 忽略錯誤，繼續嘗試其他方法
+      }
+    } catch (error) {
+      console.warn(`⚠️ [QuizLibraryConfig] 從 questions.json 載入配置失敗:`, error);
+    }
+    return null;
+  }
+
+  /**
+   * 從獨立檔案載入配置（向後相容）
    */
   private async loadConfigFromFile(version: string): Promise<QuizLibraryConfig[] | null> {
     try {
@@ -48,7 +205,7 @@ class QuizLibraryConfigService {
       if (Platform.OS !== 'web') {
         try {
           // 動態載入對應版本的配置檔案
-          const configMap: Record<string, () => QuizLibraryConfig[]> = {
+          const configMap: Record<string, () => QuizLibraryConfig | QuizLibraryConfig[]> = {
             'default': () => require('../../assets/config/versions/default/quiz-library-config.json'),
             'government-procurement': () => require('../../assets/config/versions/government-procurement/quiz-library-config.json'),
           };
@@ -56,8 +213,11 @@ class QuizLibraryConfigService {
           const loader = configMap[version];
           if (loader) {
             const fileConfig = loader();
-            console.log(`✅ [QuizLibraryConfig] 從檔案載入配置 (${version}):`, fileConfig);
-            return fileConfig;
+            const normalized = this.normalizeConfig(fileConfig);
+            if (normalized) {
+              console.log(`✅ [QuizLibraryConfig] 從獨立檔案載入配置 (${version}):`, normalized);
+              return normalized;
+            }
           }
         } catch (error) {
           console.warn(`⚠️ [QuizLibraryConfig] 無法使用 require 載入配置 (${version}):`, error);
@@ -79,8 +239,11 @@ class QuizLibraryConfigService {
           
           if (response.ok) {
             const fileConfig = await response.json();
-            console.log(`✅ [QuizLibraryConfig] 從檔案載入配置 (${version}):`, fileConfig);
-            return fileConfig;
+            const normalized = this.normalizeConfig(fileConfig);
+            if (normalized) {
+              console.log(`✅ [QuizLibraryConfig] 從獨立檔案載入配置 (${version}):`, normalized);
+              return normalized;
+            }
           } else if (response.status === 404) {
             this.configFileExists = false;
           }
@@ -102,19 +265,15 @@ class QuizLibraryConfigService {
    */
   async loadConfig(): Promise<QuizLibraryConfig[]> {
     try {
-      // 取得當前版本
-      const version = await VersionConfigService.getCurrentVersion();
-      console.log(`📋 [QuizLibraryConfig] 當前版本: ${version}`);
-
-      // 優先從檔案載入配置
-      const fileConfig = await this.loadConfigFromFile(version);
-      if (fileConfig) {
-        this.config = fileConfig;
+      // 優先從 questions.json 載入配置
+      const questionsJsonConfig = await this.loadConfigFromQuestionsJson();
+      if (questionsJsonConfig) {
+        this.config = questionsJsonConfig;
         // 更新 AsyncStorage 以保持同步
-        await this.saveConfig(fileConfig);
+        await this.saveConfig(questionsJsonConfig);
         this.lastFetchTime = Date.now();
         this.configFileExists = true;
-        console.log('✅ [QuizLibraryConfig] 使用檔案配置:', this.config);
+        console.log('✅ [QuizLibraryConfig] 使用 questions.json 配置:', this.config);
         return this.config;
       }
 
@@ -158,9 +317,8 @@ class QuizLibraryConfigService {
   async getEnabledTestNames(): Promise<string[]> {
     const config = await this.loadConfig();
     return config
-      .filter(c => c.enabled)
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map(c => c.testName);
+      .filter(c => c.enabled !== false) // 預設為 true：undefined 或 true 都會通過
+      .map(c => c.testName); // 不排序，保持配置中的順序（實際排序由 questionFiles 決定）
   }
 
   /**
@@ -185,7 +343,7 @@ class QuizLibraryConfigService {
   async isTestNameEnabled(testName: string): Promise<boolean> {
     const config = await this.loadConfig();
     const item = config.find(c => c.testName === testName);
-    return item?.enabled ?? false;
+    return item?.enabled !== false; // 預設為 true：undefined 或 true 都返回 true
   }
 
   /**
