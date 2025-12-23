@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "lastUpdated": "2025-01-27T00:00:00.000Z",
+    "totalQuestions": 457
+  },
+  "testNames": [],
+  "subjects": [],
+  "series": [],
+  "questionFiles": [
+    {
+      "testName": "GOVERNMENT_PROCUREMENT",
+      "subject": "",
+      "series_no": "2025122301",
+      "displayName": "工程及技術服務採購作業",
+      "file": "2025122301.json",
+      "count": 183
+    },
+    {
+      "testName": "GOVERNMENT_PROCUREMENT",
+      "subject": "",
+      "series_no": "2025122302",
+      "displayName": "財物及勞務採購作業",
+      "file": "2025122302.json",
+      "count": 274
+    },
+    {
+      "testName": "GOVERNMENT_PROCUREMENT",
+      "subject": "",
+      "series_no": "2025122303",
+      "displayName": "最有利標及評選優勝廠商",
+      "file": "2025122303.json",
+      "count": 163
+    },
+    {
+      "testName": "GOVERNMENT_PROCUREMENT",
+      "subject": "",
+      "series_no": "2025122304",
+      "displayName": "電子採購實務",
+      "file": "2025122304.json",
+      "count": 109
+    }
+  ]
+}
+

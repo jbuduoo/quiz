@@ -20,6 +20,7 @@ import { RootStackParamList } from '../../App';
 import { Question } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import QuestionService from '../services/QuestionService';
+import AppConfigService from '../services/AppConfigService';
 import { ImportedQuestionData, parseSource, importQuestionFile, getImportedQuestionFiles, loadImportedQuestionFile, deleteImportedQuestionFile } from '../services/ImportService';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -51,11 +52,30 @@ const FileNameListScreen = () => {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [appConfig, setAppConfig] = useState<{ enableImport: boolean; enableTrash: boolean } | null>(null);
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
   useEffect(() => {
+    loadAppConfig();
     loadData();
   }, []);
+
+  const loadAppConfig = async () => {
+    try {
+      const config = await AppConfigService.getConfig();
+      setAppConfig({
+        enableImport: config.enableImport,
+        enableTrash: config.enableTrash,
+      });
+    } catch (error) {
+      console.error('載入應用程式配置失敗:', error);
+      // 預設啟用所有功能
+      setAppConfig({
+        enableImport: true,
+        enableTrash: true,
+      });
+    }
+  };
 
   // 使用 useFocusEffect 確保每次頁面獲得焦點時都重新載入資料
   useFocusEffect(
@@ -327,82 +347,80 @@ const FileNameListScreen = () => {
       
       const fileItems: FileNameItem[] = [];
       
-      // 先添加 example.json（始終顯示在最前面，作為提示檔案）
-      console.log('📋 [FileNameListScreen] loadData: 先添加 example.json 提示檔案');
+      // 先添加索引檔案中的 questionFiles（系統預設檔案）
+      console.log('📋 [FileNameListScreen] loadData: 載入索引檔案中的 questionFiles');
       try {
-        const exampleFileName = 'example.json';
-        console.log(`📋 [FileNameListScreen] loadData: 處理本地檔案: ${exampleFileName}`);
-        let fileData: any;
+        const questionFiles = await QuestionService.getQuestionFiles();
+        console.log(`📋 [FileNameListScreen] loadData: 找到 ${questionFiles.length} 個索引檔案`);
         
-        console.log(`📋 [FileNameListScreen] loadData: 使用動態載入函數載入 ${exampleFileName}`);
-        try {
-          fileData = await loadLocalQuestionFile(exampleFileName);
-          if (fileData) {
-            console.log(`✅ [FileNameListScreen] loadData: ${exampleFileName} 載入成功`, {
-              isArray: Array.isArray(fileData),
-              hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
-              type: typeof fileData,
-              length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+        for (const fileInfo of questionFiles) {
+          try {
+            const fileName = fileInfo.file;
+            console.log(`📋 [FileNameListScreen] loadData: 處理索引檔案: ${fileName}`);
+            
+            // 載入題目檔案
+            let fileData: any;
+            try {
+              fileData = await loadLocalQuestionFile(fileName);
+              if (!fileData) {
+                console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 載入失敗（檔案不存在或格式不正確）`);
+                continue;
+              }
+              console.log(`✅ [FileNameListScreen] loadData: ${fileName} 載入成功`, {
+                isArray: Array.isArray(fileData),
+                hasQuestions: !Array.isArray(fileData) && !!fileData?.questions,
+                type: typeof fileData,
+                length: Array.isArray(fileData) ? fileData.length : (fileData?.questions?.length || 0)
+              });
+            } catch (loadError) {
+              console.error(`❌ [FileNameListScreen] loadData: 載入 ${fileName} 失敗:`, loadError);
+              continue;
+            }
+            
+            const isArray = Array.isArray(fileData);
+            const questions = isArray ? fileData : (fileData.questions || []);
+            
+            if (questions.length === 0) {
+              console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 沒有題目，跳過`);
+              continue;
+            }
+            
+            // 計算已完成題數
+            const userAnswers = await QuestionService.getUserAnswers();
+            let completedCount = 0;
+            questions.forEach((q: any, index: number) => {
+              const questionId = `${fileName}_${index + 1}`;
+              const answer = userAnswers[questionId];
+              if (answer?.isAnswered) {
+                completedCount++;
+              }
             });
-          } else {
-            console.warn(`⚠️ [FileNameListScreen] loadData: ${exampleFileName} 載入失敗（檔案不存在或格式不正確）`);
-            throw new Error(`無法載入檔案: ${exampleFileName}`);
+            
+            // 使用 displayName 或生成顯示名稱
+            const displayName = fileInfo.displayName || fileName;
+            
+            console.log(`📊 [FileNameListScreen] loadData: 索引檔案項目`, {
+              fileName,
+              displayName,
+              fileCount: questions.length,
+              completedCount,
+            });
+            
+            fileItems.push({
+              id: fileName,
+              fileName: fileName,
+              displayName: displayName,
+              fileCount: questions.length,
+              completedCount: completedCount,
+              importDate: undefined,
+              source: undefined,
+            });
+          } catch (error) {
+            console.error(`❌ [FileNameListScreen] loadData: 處理索引檔案 ${fileInfo.file} 失敗:`, error);
           }
-        } catch (loadError) {
-          console.error(`❌ [FileNameListScreen] loadData: 載入 ${exampleFileName} 失敗:`, loadError);
-          if (loadError instanceof Error) {
-            console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${loadError.message}`);
-            console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊: ${loadError.stack}`);
-          }
-          throw loadError;
         }
-        
-        const displayName = '請由右上角匯入';
-        console.log(`📋 [FileNameListScreen] loadData: 顯示名稱: ${displayName}`);
-        
-        const isArray = Array.isArray(fileData);
-        const questions = isArray ? fileData : (fileData.questions || []);
-        console.log(`📋 [FileNameListScreen] loadData: 題目資料 - isArray: ${isArray}, 題數: ${questions.length}`);
-        
-        const userAnswers = await QuestionService.getUserAnswers();
-        let completedCount = 0;
-        questions.forEach((q: any, index: number) => {
-          const questionId = `${exampleFileName}_${index + 1}`;
-          const answer = userAnswers[questionId];
-          // 只要 isAnswered 為 true 就算完成（包括問答題和未答被標記為錯誤的題目）
-          if (answer?.isAnswered) {
-            completedCount++;
-          }
-        });
-        console.log(`📋 [FileNameListScreen] loadData: ${exampleFileName} - 完成題數: ${completedCount}/${questions.length}`);
-        
-        const isCompleted = completedCount >= questions.length && questions.length > 0;
-        console.log(`📊 [FileNameListScreen] loadData: 本地檔案項目狀態`, {
-          fileName: exampleFileName,
-          fileCount: questions.length,
-          completedCount,
-          isCompleted,
-          shouldShowViewButton: isCompleted, // 本地檔案不是錯題本，所以直接檢查 isCompleted
-        });
-        
-        const fileItem = {
-          id: exampleFileName,
-          fileName: exampleFileName,
-          displayName: displayName,
-          fileCount: questions.length,
-          completedCount: completedCount,
-          importDate: isArray ? undefined : fileData.importDate,
-          source: isArray ? undefined : fileData.source,
-        };
-        console.log(`📋 [FileNameListScreen] loadData: 加入檔案項目:`, fileItem);
-        fileItems.push(fileItem);
       } catch (error) {
-        console.error(`❌ [FileNameListScreen] loadData: 載入 example.json 失敗:`, error);
-        if (error instanceof Error) {
-          console.error(`❌ [FileNameListScreen] loadData: 錯誤訊息: ${error.message}`);
-          console.error(`❌ [FileNameListScreen] loadData: 錯誤堆疊:`, error.stack);
-        }
-        // 即使載入失敗，也繼續執行，不影響其他檔案
+        console.error(`❌ [FileNameListScreen] loadData: 載入索引檔案失敗:`, error);
       }
       
       // 讀取匯入的題庫檔案
@@ -730,6 +748,8 @@ const FileNameListScreen = () => {
               Ans: String(q.Ans || q.correctAnswer || 'A'),
               exp: String(q.Exp || q.exp || q.explanation || ''),
               questionNumber: index + 1,
+              // 支援 Type 欄位（新格式）
+              Type: q.Type,
             };
           });
           console.log(`✅ [FileNameListScreen] handlePress: 標準化完成，題數: ${questions.length}`);
@@ -839,6 +859,8 @@ const FileNameListScreen = () => {
               Ans: String(q.Ans || q.correctAnswer || 'A'),
               exp: String(q.Exp || q.exp || q.explanation || ''),
               questionNumber: index + 1,
+              // 支援 Type 欄位（新格式）
+              Type: q.Type,
             };
           });
         }
@@ -1138,41 +1160,45 @@ const FileNameListScreen = () => {
         <View style={styles.headerRight}>
           {!isDeleteMode ? (
             <>
-              <TouchableOpacity
-                onPress={() => setIsDeleteMode(true)}
-                style={styles.headerButton}
-              >
-                <Text
-                  style={[
-                    styles.headerIcon,
-                    {
-                      color: colors.headerText,
-                      fontSize: titleTextSizeValue * 1.5,
-                    },
-                  ]}
+              {appConfig?.enableTrash && (
+                <TouchableOpacity
+                  onPress={() => setIsDeleteMode(true)}
+                  style={styles.headerButton}
                 >
-                  🗑️
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  // 所有平台：顯示匯入選項 Modal（包含本地匯入和遠端網站匯入）
-                  setShowImportModal(true);
-                }}
-                style={styles.headerButton}
-              >
-                <Text
-                  style={[
-                    styles.headerIcon,
-                    {
-                      color: colors.headerText,
-                      fontSize: titleTextSizeValue * 2,
-                    },
-                  ]}
+                  <Text
+                    style={[
+                      styles.headerIcon,
+                      {
+                        color: colors.headerText,
+                        fontSize: titleTextSizeValue * 1.5,
+                      },
+                    ]}
+                  >
+                    🗑️
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {appConfig?.enableImport && (
+                <TouchableOpacity
+                  onPress={() => {
+                    // 所有平台：顯示匯入選項 Modal（包含本地匯入和遠端網站匯入）
+                    setShowImportModal(true);
+                  }}
+                  style={styles.headerButton}
                 >
-                  📥
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.headerIcon,
+                      {
+                        color: colors.headerText,
+                        fontSize: titleTextSizeValue * 2,
+                      },
+                    ]}
+                  >
+                    📥
+                  </Text>
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <>

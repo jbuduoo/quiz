@@ -9,9 +9,9 @@
     "assetBundlePatterns": [
       "**/*",
       "assets/*.png",
-      "assets/data/**/*.json",
-      "assets/data/questions/**/*.json",
-      "assets/config/**/*.json",
+      "assets/data/questions/versions/**/*.json",
+      "assets/config/versions/**/*.json",
+      "assets/config/version.config.json",
       "assets/images/**/*.png",
       "assets/images/**/*.jpg",
       "assets/images/**/*.jpeg"

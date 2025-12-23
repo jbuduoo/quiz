@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "version": "3.0.0",
+    "lastUpdated": "2025-01-27T00:00:00.000Z",
+    "totalQuestions": 4
+  },
+  "testNames": [],
+  "subjects": [],
+  "series": [],
+  "questionFiles": [
+    {
+      "testName": "IPAS_01",
+      "subject": "",
+      "series_no": "example",
+      "displayName": "範例題目",
+      "file": "example.json",
+      "count": 4
+    }
+  ]
+}

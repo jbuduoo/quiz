@@ -1,132 +1,113 @@
-# 題庫配置說明
+# 版本配置說明
 
-## 檔案位置
+## 目錄結構
 
-`assets/config/quiz-library-config.json`
+```
+assets/
+  config/
+    version.config.json          # 版本選擇檔（唯一設定點）
+    versions/                    # 存放所有版本的配置
+      default/
+        app-config.json          # 應用程式配置
+        quiz-library-config.json # 題庫配置
+      government-procurement/
+        app-config.json
+        quiz-library-config.json
+  data/
+    questions/
+      versions/                  # 存放所有版本的題目資料
+        default/
+          questions.json
+          example.json
+          ...
+        government-procurement/
+          questions.json
+          ...
+```
 
-## 功能說明
+## 切換版本
 
-此配置檔案用於控制哪些題庫在應用程式中顯示。開發者可以透過編輯此檔案來開啟或關閉特定的題庫。
+### 方法 1：修改 version.config.json
 
-## 配置格式
+編輯 `assets/config/version.config.json`：
+
+```json
+{
+  "currentVersion": "government-procurement"
+}
+```
+
+可用的版本：
+- `default` - 預設版本（WITS證照考試題庫）
+- `government-procurement` - 政府採購法版本
+
+### 方法 2：使用命令列（建置時）
+
+```bash
+# 建置預設版本
+npm run build:android:apk
+
+# 建置前先修改 version.config.json 為目標版本
+# 然後執行建置命令
+```
+
+## 配置檔案說明
+
+### app-config.json
+
+每個版本的應用程式配置：
+
+```json
+{
+  "appName": "應用程式名稱",
+  "enableImport": true,      // 是否啟用匯入功能
+  "enableTrash": true,       // 是否啟用垃圾桶功能
+  "questionsPath": "版本名稱",
+  "version": "版本名稱"
+}
+```
+
+### quiz-library-config.json
+
+題庫配置，定義哪些題庫啟用：
 
 ```json
 [
   {
-    "testName": "IPAS_01",
+    "testName": "題庫代碼",
     "enabled": true,
-    "displayName": "IPAS AI應用規劃師初級",
+    "displayName": "顯示名稱",
     "displayOrder": 1
-  },
-  {
-    "testName": "IPAS_02",
-    "enabled": true,
-    "displayName": "IPAS AI應用規劃師中級",
-    "displayOrder": 2
-  },
-  {
-    "testName": "JAVA",
-    "enabled": false,
-    "displayName": "Java 程式設計認證",
-    "displayOrder": 3
   }
 ]
 ```
 
-## 欄位說明
+## 建置流程
 
-- **testName**: 題庫代碼（必須與 `questions.json` 中的 `testName` 一致）
-- **enabled**: 是否啟用（`true` = 顯示，`false` = 隱藏）
-- **displayName**: 顯示名稱（在應用程式中顯示的名稱）
-- **displayOrder**: 顯示順序（數字越小越前面）
+1. **開發時**：
+   - 修改 `version.config.json` 選擇版本
+   - 執行 `npm start` 進行開發
+   - 應用程式會從 `versions/` 目錄讀取配置和資料
 
-## 使用方式
+2. **建置時**：
+   - 執行 `npm run build:android:apk` 或 `npm run build:android:aab`
+   - 建置腳本會：
+     - 讀取 `version.config.json` 取得當前版本
+     - 驗證版本目錄是否存在
+   - EAS Build 會打包所有版本的目錄（根據 app.json 的 assetBundlePatterns）
+   - 運行時根據 `version.config.json` 選擇對應版本載入
 
-### 1. 開啟題庫
+## 新增版本
 
-將對應題庫的 `enabled` 設為 `true`：
-
-```json
-{
-  "testName": "JAVA",
-  "enabled": true,  // 改為 true
-  "displayName": "Java 程式設計認證",
-  "displayOrder": 3
-}
-```
-
-### 2. 關閉題庫
-
-將對應題庫的 `enabled` 設為 `false`：
-
-```json
-{
-  "testName": "IPAS_01",
-  "enabled": false,  // 改為 false
-  "displayName": "IPAS AI應用規劃師初級",
-  "displayOrder": 1
-}
-```
-
-### 3. 新增題庫
-
-在陣列中新增一個物件：
-
-```json
-{
-  "testName": "PYTHON",
-  "enabled": true,
-  "displayName": "Python 程式設計認證",
-  "displayOrder": 4
-}
-```
-
-## 更新步驟
-
-1. 編輯 `assets/config/quiz-library-config.json`
-2. 儲存檔案
-3. 重新載入網頁（在網頁版）或重新啟動應用程式（在行動裝置）
+1. 在 `assets/config/versions/` 下建立新版本目錄（例如：`new-version`）
+2. 建立 `app-config.json` 和 `quiz-library-config.json`
+3. 在 `assets/data/questions/versions/` 下建立對應的題目資料目錄
+4. 將題目資料放入該目錄
+5. 修改 `version.config.json` 的 `currentVersion` 為新版本名稱
 
 ## 注意事項
 
-- 配置檔案會在應用程式啟動時載入
-- 網頁版會自動從 `/assets/config/quiz-library-config.json` 載入配置
-- 行動裝置版本會使用本地快取的配置（首次載入後）
-- 如果配置檔案載入失敗，會使用預設配置
-- `testName` 必須與實際存在的題庫資料一致
-
-## 範例：切換到 JAVA 題庫
-
-如果要將應用程式切換為只顯示 JAVA 題庫：
-
-```json
-[
-  {
-    "testName": "IPAS_01",
-    "enabled": false,
-    "displayName": "IPAS AI應用規劃師初級",
-    "displayOrder": 1
-  },
-  {
-    "testName": "IPAS_02",
-    "enabled": false,
-    "displayName": "IPAS AI應用規劃師中級",
-    "displayOrder": 2
-  },
-  {
-    "testName": "JAVA",
-    "enabled": true,
-    "displayName": "Java 程式設計認證",
-    "displayOrder": 1
-  }
-]
-```
-
-## 技術細節
-
-- 配置檔案使用 JSON 格式
-- 支援註解（雖然標準 JSON 不支援，但可以透過工具處理）
-- 配置會快取 5 分鐘，避免頻繁請求
-- 如果遠端配置載入失敗，會使用本地儲存的配置或預設配置
-
-
+- 所有版本都會被打包到 APK 中，運行時根據 `version.config.json` 選擇版本
+- 新增版本時需要在代碼中添加對應的映射（見下方說明）
+- 建置前請確認 `version.config.json` 中的版本名稱正確
+- 每個版本的配置和資料應該獨立管理

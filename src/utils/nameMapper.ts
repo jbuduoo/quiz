@@ -4,6 +4,7 @@
  */
 
 import QuizLibraryConfigService from '../services/QuizLibraryConfigService';
+import QuestionService from '../services/QuestionService';
 
 // 預設測驗名稱映射（作為後備）
 const DEFAULT_TEST_NAME_MAP: Record<string, string> = {
@@ -66,12 +67,40 @@ export function getSubjectDisplay(subject: string | undefined | null): string {
 }
 
 /**
- * 獲取期數的顯示名稱（目前不需要映射，直接返回）
- * @param series_no 期數（例如：11409）
+ * 獲取期數的顯示名稱（同步版本，直接返回 series_no）
+ * @param series_no 期數（例如：11409 或 2025122301）
  * @returns 顯示名稱
  */
 export function getSeriesDisplay(series_no: string | undefined | null): string {
   if (!series_no) return '未知期數';
+  return series_no;
+}
+
+/**
+ * 獲取期數的顯示名稱（異步版本，從 questionFiles 中查找 displayName）
+ * @param series_no 期數（例如：2025122301）
+ * @param testName 測驗名稱（可選，用於精確查找）
+ * @param subject 科目名稱（可選，用於精確查找）
+ * @returns 顯示名稱（如果有 displayName 則返回，否則返回 series_no）
+ */
+export async function getSeriesDisplayAsync(
+  series_no: string | undefined | null,
+  testName?: string | null,
+  subject?: string | null
+): Promise<string> {
+  if (!series_no) return '未知期數';
+  
+  try {
+    // 從 QuestionService 獲取 displayName
+    const displayName = await QuestionService.getSeriesDisplayName(series_no, testName, subject);
+    if (displayName) {
+      return displayName;
+    }
+  } catch (error) {
+    console.warn('⚠️ [getSeriesDisplayAsync] 無法獲取顯示名稱:', error);
+  }
+  
+  // 如果沒有找到 displayName，返回原始的 series_no
   return series_no;
 }
 

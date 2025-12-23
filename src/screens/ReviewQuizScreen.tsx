@@ -22,6 +22,7 @@ import SearchQuestionModal from '../components/SearchQuestionModal';
 import { getQuestionDisplay, separateBackgroundAndQuestion } from '../utils/questionGroupParser';
 import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 import { useTheme } from '../contexts/ThemeContext';
+import { isEssayQuestion, isMultipleChoice as isMultipleChoiceHelper, isTrueFalseQuestion, isTrueFalseAnswerEquivalent } from '../utils/questionTypeHelper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ReviewQuizRouteProp = RNRouteProp<RootStackParamList, 'ReviewQuiz'>;
@@ -68,8 +69,7 @@ const ReviewQuizScreen = () => {
     if (questions.length > 0 && currentIndex < questions.length) {
       const currentQuestion = questions[currentIndex];
       if (currentQuestion) {
-        const correctAnswer = String(currentQuestion.Ans);
-        const isMultiple = correctAnswer.includes(',');
+        const isMultiple = isMultipleChoiceHelper(currentQuestion);
         setIsMultipleChoice(isMultiple);
         if (!isMultiple) {
           // 單選題重置為單選模式
@@ -170,8 +170,7 @@ const ReviewQuizScreen = () => {
       setSelectedAnswer(savedAnswer);
       
       // 如果是複選題且答案包含逗號，解析為陣列
-      const correctAnswer = String(currentQuestion.Ans);
-      const isMultiple = correctAnswer.includes(',');
+      const isMultiple = isMultipleChoiceHelper(currentQuestion);
       if (isMultiple && savedAnswer && typeof savedAnswer === 'string' && savedAnswer.includes(',')) {
         setSelectedAnswers(savedAnswer.split(',').map(a => a.trim()) as Array<'A' | 'B' | 'C' | 'D' | 'E'>);
       } else if (isMultiple) {
@@ -194,7 +193,7 @@ const ReviewQuizScreen = () => {
 
     const currentQuestion = questions[currentIndex];
     const correctAnswer = String(currentQuestion.Ans);
-    const isMultiple = correctAnswer.includes(',');
+    const isMultiple = isMultipleChoiceHelper(currentQuestion);
 
     if (isMultiple) {
       // 複選題：切換選項選擇狀態
@@ -207,9 +206,19 @@ const ReviewQuizScreen = () => {
       });
       // 不立即顯示結果，等待提交
     } else {
-      // 單選題：立即顯示結果（保持原有邏輯）
+      // 單選題或是非題：立即顯示結果
       setSelectedAnswer(option);
-      const correct = option === correctAnswer;
+      
+      // 處理是非題的特殊答案格式
+      let correct: boolean;
+      if (isTrueFalseQuestion(currentQuestion)) {
+        // 是非題：使用等價比較（O/A/是 等價，X/B/否 等價）
+        correct = isTrueFalseAnswerEquivalent(option, correctAnswer, currentQuestion);
+      } else {
+        // 一般單選題：直接比較
+        correct = option === correctAnswer;
+      }
+      
       setIsCorrect(correct);
       setShowResult(true);
 
@@ -590,16 +599,11 @@ const ReviewQuizScreen = () => {
         </View>
 
         {(() => {
-          // 檢測是否為問答題（所有選項都為空）
-          const isEssayQuestion = 
-            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
-            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
-            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
-            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
-            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
+          // 檢測是否為問答題
+          const isEssay = isEssayQuestion(currentQuestion);
 
           // 如果是問答題，顯示「顯示答案」按鈕
-          if (isEssayQuestion) {
+          if (isEssay) {
             return (
               <View style={styles.essayQuestionContainer}>
                 <Text style={styles.essayQuestionHint}>
@@ -669,12 +673,16 @@ const ReviewQuizScreen = () => {
               ? selectedAnswers.includes(option)
               : Boolean(selectedAnswer === option);
             
-            // 檢查是否為正確選項（支援複選）
+            // 檢查是否為正確選項（支援複選和是非題）
             const correctAnswer = String(currentQuestion.Ans);
             let isCorrectOption = false;
-            if (correctAnswer.includes(',')) {
+            const isMultiple = isMultipleChoiceHelper(currentQuestion);
+            if (isMultiple) {
               const correctOptions = correctAnswer.split(',').map(a => a.trim());
               isCorrectOption = correctOptions.includes(option);
+            } else if (isTrueFalseQuestion(currentQuestion)) {
+              // 是非題：使用等價比較
+              isCorrectOption = isTrueFalseAnswerEquivalent(option, correctAnswer, currentQuestion);
             } else {
               isCorrectOption = option === correctAnswer;
             }

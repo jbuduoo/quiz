@@ -1,3 +1,6 @@
+// 題目類型定義
+export type QuestionType = '選擇題' | '複選題' | '是非題' | '問答題';
+
 // 題目資料結構
 export interface Question {
   id: string;                    // 題目ID
@@ -14,6 +17,7 @@ export interface Question {
   series_no?: string;             // 期數（例如：61期）- 可選，通常從檔案 metadata 取得
   chapter?: string;              // 所屬章節（可選，保留向後相容）
   questionNumber?: number;        // 在該期數中的題號（從1開始）
+  Type?: QuestionType;           // 題目類型（可選，用於新格式，如果沒有則根據選項推斷）
 }
 
 // 用戶答題狀態

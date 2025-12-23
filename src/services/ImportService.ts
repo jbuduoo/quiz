@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Question } from '../types';
+import { Question, QuestionType } from '../types';
 // 延遲導入 QuestionService 以避免循環依賴
 // import QuestionService from './QuestionService';
 
@@ -13,6 +13,7 @@ export interface ImportedQuestionData {
   questions: Array<{
     Id?: string;
     Q?: string;
+    Type?: string;  // 題目類型（新格式支援）
     A?: string;
     B?: string;
     C?: string;
@@ -134,6 +135,8 @@ function normalizeQuestion(
     testName,
     subject: subject || undefined,
     series_no,
+    // 支援 Type 欄位（新格式）
+    Type: q.Type as QuestionType | undefined,
   };
 }
 

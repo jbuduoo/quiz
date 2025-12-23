@@ -4,6 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, StyleSheet, Platform, Text } from 'react-native';
 import QuestionService from './src/services/QuestionService';
+import VersionConfigService from './src/services/VersionConfigService';
+import AppConfigService from './src/services/AppConfigService';
+import QuizLibraryConfigService from './src/services/QuizLibraryConfigService';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import QuizScreen from './src/screens/QuizScreen';
 import WrongBookScreen from './src/screens/WrongBookScreen';
@@ -52,7 +55,21 @@ export default function App() {
     }, Platform.OS === 'android' ? 20000 : 15000); // Android 20秒，其他平台 15秒
     
     try {
-      // 初始化資料（設定超時，避免無限等待）
+      // 0. 先清除所有服務的快取，強制重新載入（確保使用最新配置）
+      console.log('🔄 [App] 清除所有服務快取，強制重新載入配置');
+      VersionConfigService.clearCache();
+      AppConfigService.clearCache();
+      QuizLibraryConfigService.clearCache();
+      
+      // 1. 載入版本配置（會從檔案重新載入）
+      const version = await VersionConfigService.getCurrentVersion();
+      console.log(`✅ [App] 當前版本: ${version}`);
+      
+      // 2. 載入應用程式配置（會自動使用當前版本）
+      const appConfig = await AppConfigService.loadConfig();
+      console.log('✅ [App] 應用程式配置載入完成:', appConfig);
+      
+      // 3. 初始化資料（設定超時，避免無限等待）
       // QuestionService 會優先使用本地打包的 JSON 檔案，不需要網路連線
       console.log('🔄 [App] initializeApp: 準備呼叫 QuestionService.initializeData()');
       const initPromise = QuestionService.initializeData();

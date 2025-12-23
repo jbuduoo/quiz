@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Question, UserAnswer, Chapter, TestName, Subject, Series } from '../types';
+import { Question, UserAnswer, Chapter, TestName, Subject, Series, QuestionType } from '../types';
 import { questionFileMap } from './questionFileMap';
 import { loadImportedQuestionFile, getImportedQuestionFiles } from './ImportService';
+import { loadLocalQuestionFile } from '../utils/fileLoader';
+import VersionConfigService from './VersionConfigService';
 
 const USER_ANSWERS_KEY = '@quiz:userAnswers';
 const CHAPTERS_KEY = '@quiz:chapters';
@@ -26,6 +28,7 @@ interface IndexData {
     testName: string;
     subject: string;
     series_no: string;
+    displayName?: string;  // 顯示名稱（中文），用於列表顯示
     file: string;
     count: number;
   }>;
@@ -49,52 +52,75 @@ export interface QuestionFileData {
 // 快取已載入的題目檔案
 const questionCache = new Map<string, Question[]>();
 
+// 版本索引檔案映射（Metro bundler 需要靜態 require）
+const versionIndexMap: Record<string, () => IndexData> = {
+  'default': () => require('../../assets/data/questions/versions/default/questions.json'),
+  'government-procurement': () => require('../../assets/data/questions/versions/government-procurement/questions.json'),
+};
+
 // 載入索引檔案
 async function loadIndexData(): Promise<IndexData | null> {
   console.log('📂 [loadIndexData] 開始載入索引資料');
   console.log('📂 [loadIndexData] 時間:', new Date().toISOString());
+  
+  // 取得當前版本
+  const version = await VersionConfigService.getCurrentVersion();
+  const indexFileUrl = await VersionConfigService.getIndexFileUrl();
+  
+  console.log(`📂 [loadIndexData] 當前版本: ${version}`);
+  
   try {
-    // 在 React Native 平台，使用 require（優先）
-    console.log('📂 [loadIndexData] 嘗試使用 require 載入索引');
-    try {
-      console.log('📂 [loadIndexData] 執行 require("../../assets/data/questions.json")');
-      const indexModule = require('../../assets/data/questions.json') as IndexData;
-      console.log('📂 [loadIndexData] require 成功，檢查資料結構', {
-        hasIndexModule: !!indexModule,
-        hasTestNames: !!indexModule?.testNames,
-        hasSubjects: !!indexModule?.subjects,
-        testNamesLength: indexModule?.testNames?.length,
-        subjectsLength: indexModule?.subjects?.length
-      });
-      if (indexModule && indexModule.testNames && indexModule.subjects) {
-        console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.testNames.length} 個測驗名稱）`);
-        return indexModule;
-      } else {
-        console.warn('⚠️ [loadIndexData] 索引資料結構不完整', {
+    // 在 React Native 平台（iOS/Android），使用靜態 require
+    // 注意：Metro bundler 需要靜態路徑，所以使用版本映射
+    if (Platform.OS !== 'web') {
+      console.log('📂 [loadIndexData] 在 React Native 平台，嘗試使用 require 載入索引');
+      try {
+        // 使用版本映射的靜態 require
+        const loader = versionIndexMap[version];
+        if (!loader) {
+          console.error(`❌ [loadIndexData] 版本 "${version}" 沒有對應的 require 映射`);
+          console.error(`   可用的版本: ${Object.keys(versionIndexMap).join(', ')}`);
+          throw new Error(`版本 ${version} 沒有對應的映射`);
+        }
+        
+        const indexModule = loader() as IndexData;
+        console.log('📂 [loadIndexData] require 成功，檢查資料結構', {
           hasIndexModule: !!indexModule,
           hasTestNames: !!indexModule?.testNames,
-          hasSubjects: !!indexModule?.subjects
+          hasSubjects: !!indexModule?.subjects,
+          testNamesLength: indexModule?.testNames?.length,
+          subjectsLength: indexModule?.subjects?.length
         });
-      }
-    } catch (requireError) {
-      console.error('❌ [loadIndexData] 無法使用 require 載入索引:', requireError);
-      if (requireError instanceof Error) {
-        console.error('❌ [loadIndexData] require 錯誤詳情:', requireError.message);
-        console.error('❌ [loadIndexData] require 錯誤堆疊:', requireError.stack);
-      } else {
-        console.error('❌ [loadIndexData] require 錯誤類型:', typeof requireError);
-        console.error('❌ [loadIndexData] require 錯誤內容:', requireError);
+        if (indexModule && indexModule.testNames && indexModule.subjects) {
+          console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.testNames.length} 個測驗名稱）`);
+          return indexModule;
+        } else {
+          console.warn('⚠️ [loadIndexData] 索引資料結構不完整', {
+            hasIndexModule: !!indexModule,
+            hasTestNames: !!indexModule?.testNames,
+            hasSubjects: !!indexModule?.subjects
+          });
+        }
+      } catch (requireError) {
+        console.error('❌ [loadIndexData] 無法使用 require 載入索引:', requireError);
+        if (requireError instanceof Error) {
+          console.error('❌ [loadIndexData] require 錯誤詳情:', requireError.message);
+          console.error('❌ [loadIndexData] require 錯誤堆疊:', requireError.stack);
+        } else {
+          console.error('❌ [loadIndexData] require 錯誤類型:', typeof requireError);
+          console.error('❌ [loadIndexData] require 錯誤內容:', requireError);
+        }
       }
     }
     
     // 在 Web 平台，使用 fetch
     // 注意：Metro bundler 會自動移除 /assets/ 前綴，所以我們需要使用 assets/ 開頭的路徑
-    // 這樣 Metro 移除 /assets/ 後，就會在專案根目錄查找 assets/data/questions.json
+    // 根據當前版本動態載入對應版本的 questions.json
     if (typeof window !== 'undefined') {
       console.log('📂 [loadIndexData] 在 Web 平台，嘗試使用 fetch 載入索引');
       try {
-        console.log('📂 [loadIndexData] 執行 fetch("/assets/assets/data/questions.json")');
-        const response = await fetch('/assets/assets/data/questions.json');
+        console.log(`📂 [loadIndexData] 執行 fetch("${indexFileUrl}")`);
+        const response = await fetch(indexFileUrl);
         console.log('📂 [loadIndexData] fetch 回應:', {
           ok: response.ok,
           status: response.status,
@@ -122,8 +148,6 @@ async function loadIndexData(): Promise<IndexData | null> {
           console.error('❌ [loadIndexData] fetch 錯誤堆疊:', fetchError.stack);
         }
       }
-    } else {
-      console.log('📂 [loadIndexData] 不在 Web 平台，跳過 fetch');
     }
     
     console.error('❌ [loadIndexData] 所有載入索引的方法都失敗了');
@@ -155,6 +179,12 @@ function parseFilePath(filePath: string): { testName: string; subject: string | 
   // 新格式: questions/NEW_CERT/20251216.json (兩層結構，沒有 subject)
   // 舊格式: questions/IPAS_01_L11_11401.json (向後相容)
   
+  // 檢查 filePath 是否有效
+  if (!filePath || typeof filePath !== 'string') {
+    console.error(`❌ [parseFilePath] 無效的檔案路徑: ${filePath}`);
+    return null;
+  }
+  
   if (filePath.includes('/')) {
     // 新格式：資料夾結構
     // 嘗試匹配三層結構
@@ -185,6 +215,12 @@ function parseFilePath(filePath: string): { testName: string; subject: string | 
 
 // 按需載入題目檔案
 async function loadQuestionFile(filePath: string): Promise<Question[]> {
+  // 檢查 filePath 是否有效
+  if (!filePath || typeof filePath !== 'string') {
+    console.error(`❌ [loadQuestionFile] 無效的檔案路徑: ${filePath}`);
+    return [];
+  }
+  
   console.log(`🔍 [loadQuestionFile] 開始載入檔案: ${filePath}`);
   
   // 檢查快取
@@ -208,7 +244,29 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
     }
     
     // 從路徑解析 testName, subject, series_no
-    const pathInfo = parseFilePath(filePath);
+    let pathInfo = parseFilePath(filePath);
+    
+    // 如果 parseFilePath 失敗，嘗試從索引資料中查找檔案資訊
+    if (!pathInfo) {
+      console.log(`ℹ️ [loadQuestionFile] 無法從路徑解析檔案資訊，嘗試從索引資料查找: ${filePath}`);
+      try {
+        const indexData = await loadIndexData();
+        if (indexData && indexData.questionFiles) {
+          const fileInfo = indexData.questionFiles.find(f => f.file === filePath);
+          if (fileInfo) {
+            pathInfo = {
+              testName: fileInfo.testName,
+              subject: fileInfo.subject || null,
+              series_no: fileInfo.series_no
+            };
+            console.log(`✅ [loadQuestionFile] 從索引資料找到檔案資訊:`, pathInfo);
+          }
+        }
+      } catch (indexError) {
+        console.warn(`⚠️ [loadQuestionFile] 無法從索引資料查找檔案資訊:`, indexError);
+      }
+    }
+    
     if (!pathInfo) {
       console.error(`❌ [loadQuestionFile] 無法解析檔案路徑: ${filePath}`);
       return [];
@@ -270,6 +328,8 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
               subject: finalSubject || undefined, // 如果沒有 subject，設為 undefined
               series_no: finalSeriesNo,
               chapter: q.chapter || undefined,
+              // 支援 Type 欄位（新格式）
+              Type: q.Type as QuestionType | undefined,
             };
             
             return normalizedQuestion;
@@ -295,26 +355,120 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
         }
       }
     } else {
-      console.warn(`找不到題目檔案映射: ${filePath}`);
-      console.warn(`可用的檔案映射:`, Object.keys(questionFileMap).slice(0, 5), '...');
+      // 映射表中沒有找到，嘗試使用 loadLocalQuestionFile（類似 example.json 的載入方式）
+      console.log(`ℹ️ [loadQuestionFile] 映射表中沒有找到 ${filePath}，嘗試使用 loadLocalQuestionFile 載入`);
+      try {
+        // 如果 filePath 包含路徑分隔符，提取檔名；否則直接使用
+        const fileName = filePath.includes('/') ? filePath.split('/').pop() || filePath : filePath;
+        const localFileData = await loadLocalQuestionFile(fileName);
+        
+        if (localFileData) {
+          // 處理載入的資料：可能是陣列格式或物件格式
+          let questionsArray: any[] = [];
+          if (Array.isArray(localFileData)) {
+            questionsArray = localFileData;
+          } else if (localFileData.questions && Array.isArray(localFileData.questions)) {
+            questionsArray = localFileData.questions;
+          }
+          
+          if (questionsArray.length > 0) {
+            // 標準化題目格式（使用 pathInfo 中的變數）
+            const finalTestName = testName;
+            const finalSubject = subject === null ? null : subject;
+            const finalSeriesNo = series_no;
+            
+            const normalizedQuestions = questionsArray.map((q: any, index: number) => {
+              const questionId = finalSubject 
+                ? `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`
+                : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
+              
+              const rawContent = String(q.Q || q.content || '');
+              const cleanedContent = removeQuestionNumberPrefix(rawContent);
+              
+              const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+                ? String(q.E) 
+                : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+                  ? String(q.options.E)
+                  : undefined;
+              
+              const normalizedQuestion: Question = {
+                id: questionId,
+                content: cleanedContent,
+                A: String(q.A || q.options?.A || ''),
+                B: String(q.B || q.options?.B || ''),
+                C: String(q.C || q.options?.C || ''),
+                D: String(q.D || q.options?.D || ''),
+                E: EValue,
+                Ans: (q.Ans || q.correctAnswer || 'A') as 'A' | 'B' | 'C' | 'D' | 'E' | string,
+                exp: String(q.Exp || q.exp || q.explanation || ''),
+                questionNumber: index + 1,
+                testName: finalTestName,
+                subject: finalSubject || undefined,
+                series_no: finalSeriesNo,
+                chapter: q.chapter || undefined,
+                Type: q.Type as QuestionType | undefined,
+              };
+              return normalizedQuestion;
+            });
+            
+            questionCache.set(filePath, normalizedQuestions);
+            console.log(`✅ [loadQuestionFile] 使用 loadLocalQuestionFile 載入成功: ${filePath} (${normalizedQuestions.length} 題)`);
+            return normalizedQuestions;
+          }
+        }
+      } catch (localLoadError) {
+        console.warn(`⚠️ [loadQuestionFile] loadLocalQuestionFile 載入失敗: ${filePath}`, localLoadError);
+      }
     }
     
-    // 如果映射表載入失敗，在 Web 平台嘗試使用 fetch（作為備用方案）
+    // 如果映射表和 loadLocalQuestionFile 都失敗，在 Web 平台嘗試使用 fetch（作為備用方案）
     if (typeof window !== 'undefined') {
       try {
-        const response = await fetch(`/assets/data/${filePath}`);
+        // 構建正確的檔案路徑（包含版本資訊）
+        const version = await VersionConfigService.getCurrentVersion();
+        const questionsDataPath = await VersionConfigService.getQuestionsDataPath();
+        // 對檔名進行 URL 編碼以支援中文檔名
+        // 如果 filePath 包含路徑分隔符，則分割處理；否則直接編碼檔名
+        let encodedFileName: string;
+        if (filePath.includes('/')) {
+          // 包含路徑分隔符：將路徑分割，只對檔名部分進行編碼
+          const pathParts = filePath.split('/');
+          const encodedParts = pathParts.map((part, index) => {
+            // 最後一部分是檔名，需要編碼
+            if (index === pathParts.length - 1) {
+              return encodeURIComponent(part);
+            }
+            return part;
+          });
+          encodedFileName = encodedParts.join('/');
+        } else {
+          // 只是檔名：直接編碼
+          encodedFileName = encodeURIComponent(filePath);
+        }
+        // Web 平台需要 /assets/assets/ 前綴（Metro bundler 會自動移除第一個 /assets/）
+        // 注意：questionsDataPath 已經包含 assets/ 開頭，所以只需要再加一個 /assets/ 前綴
+        const fetchPath = `/assets/${questionsDataPath}/${encodedFileName}`;
+        
+        console.log(`🌐 [loadQuestionFile] Web 平台 fetch 路徑: ${fetchPath} (原始: ${filePath})`);
+        const response = await fetch(fetchPath);
         if (response.ok) {
           const data = await response.json() as QuestionFileData;
           if (data && data.questions) {
             // 從路徑或 metadata 取得 testName、subject、series_no
             const metadata = data.metadata || {};
             const finalTestName = metadata.testName || testName;
-            const finalSubject = metadata.subject || subject;
+            // 如果 subject 為 null 或空字串（兩層結構），finalSubject 也為 null；否則使用 metadata 或 pathInfo 的 subject
+            const finalSubject = (subject === null || subject === '') ? null : (metadata.subject || subject || null);
             const finalSeriesNo = metadata.series_no || series_no;
             
             // 為每個題目添加題號和 metadata 資訊，並確保所有欄位類型正確
             const normalizedQuestions = data.questions.map((q: any, index: number) => {
-              const questionId = `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`;
+              // 建立完整的題目 ID
+              // 三層結構：testName_subject_series_no_題號
+              // 兩層結構：testName_series_no_題號（沒有 subject）
+              const questionId = finalSubject 
+                ? `${finalTestName}_${finalSubject}_${finalSeriesNo}_${index + 1}`
+                : `${finalTestName}_${finalSeriesNo}_${index + 1}`;
               
               // 支援新格式（Id, Q, Exp）和舊格式（id, content, exp）的映射
               // 移除問題開頭的編號
@@ -337,9 +491,11 @@ async function loadQuestionFile(filePath: string): Promise<Question[]> {
                 exp: String(q.Exp || q.exp || q.explanation || ''),
                 questionNumber: index + 1,
                 testName: finalTestName,
-                subject: finalSubject || undefined, // 將 null 轉換為 undefined
+                subject: finalSubject || undefined, // 如果沒有 subject，設為 undefined
                 series_no: finalSeriesNo,
                 chapter: q.chapter || undefined,
+                // 支援 Type 欄位（新格式）
+                Type: q.Type as QuestionType | undefined,
               };
               return normalizedQuestion;
             });
@@ -513,8 +669,23 @@ class QuestionService {
     const allQuestions: Question[] = [];
     
     // 載入所有題目檔案
+    // 支援兩種格式：
+    // 1. 字串陣列：["file1.json", "file2.json"]
+    // 2. 物件陣列：[{file: "file1.json", testName: "...", ...}]
     for (const fileInfo of this.indexData.questionFiles) {
-      const questions = await loadQuestionFile(fileInfo.file);
+      let filePath: string;
+      
+      // 檢查是字串還是物件
+      if (typeof fileInfo === 'string') {
+        filePath = fileInfo;
+      } else if (fileInfo && typeof fileInfo === 'object' && 'file' in fileInfo) {
+        filePath = fileInfo.file;
+      } else {
+        console.warn(`⚠️ [getAllQuestions] 無效的檔案資訊格式:`, fileInfo);
+        continue;
+      }
+      
+      const questions = await loadQuestionFile(filePath);
       allQuestions.push(...questions);
     }
     
@@ -1035,6 +1206,41 @@ class QuestionService {
     }
   }
 
+  // 取得期數的顯示名稱（從 questionFiles 中查找 displayName）
+  async getSeriesDisplayName(
+    series_no: string,
+    testName?: string | null,
+    subject?: string | null
+  ): Promise<string | null> {
+    try {
+      if (!this.indexData) {
+        this.indexData = await loadIndexData();
+      }
+      
+      if (this.indexData && this.indexData.questionFiles) {
+        // 查找對應的 questionFile
+        const fileInfo = this.indexData.questionFiles.find(f => {
+          const matchSeries = f.series_no === series_no;
+          const matchTestName = !testName || f.testName === testName;
+          const matchSubject = !subject 
+            ? (!f.subject || f.subject === '')
+            : f.subject === subject;
+          return matchSeries && matchTestName && matchSubject;
+        });
+        
+        // 如果找到且有關聯的 displayName，則返回 displayName
+        if (fileInfo?.displayName) {
+          return fileInfo.displayName;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('取得期數顯示名稱失敗:', error);
+      return null;
+    }
+  }
+
   // 更新進度統計
   async updateProgress(): Promise<void> {
     console.log('📊 [updateProgress] 開始更新進度統計');
@@ -1510,6 +1716,26 @@ class QuestionService {
     } catch (error) {
       console.error('清空錯題本答題記錄失敗:', error);
     }
+  }
+
+  // 取得索引檔案中的 questionFiles
+  async getQuestionFiles(): Promise<Array<{
+    testName: string;
+    subject: string;
+    series_no: string;
+    displayName?: string;
+    file: string;
+    count: number;
+  }>> {
+    if (!this.indexData) {
+      this.indexData = await loadIndexData();
+    }
+    
+    if (!this.indexData) {
+      return [];
+    }
+    
+    return this.indexData.questionFiles || [];
   }
 
   // 合併匯入的索引到主索引

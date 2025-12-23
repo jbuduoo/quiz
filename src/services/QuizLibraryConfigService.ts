@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import VersionConfigService from './VersionConfigService';
 
 const QUIZ_LIBRARY_CONFIG_KEY = '@quiz:libraryConfig';
-const REMOTE_CONFIG_URL = '/assets/config/quiz-library-config.json';
 
 export interface QuizLibraryConfig {
   testName: string;
@@ -40,71 +40,103 @@ class QuizLibraryConfigService {
   private configFileExists: boolean | null = null; // null: 未檢查, true: 存在, false: 不存在
 
   /**
-   * 載入配置（優先從遠端，失敗則使用本地）
+   * 從檔案載入配置
    */
-  async loadConfig(): Promise<QuizLibraryConfig[]> {
+  private async loadConfigFromFile(version: string): Promise<QuizLibraryConfig[] | null> {
     try {
-      // 嘗試從遠端載入（僅在 Web 平台）
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const now = Date.now();
-        // 如果之前確認配置文件不存在，直接跳過遠端載入
-        if (this.configFileExists === false) {
-          // 配置文件不存在，直接使用本地配置
-        } else if (now - this.lastFetchTime > this.CACHE_DURATION || this.config.length === 0) {
-          try {
-            // 嘗試載入遠端配置
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超時
-            
-            const response = await fetch(`${REMOTE_CONFIG_URL}?t=${now}`, {
-              signal: controller.signal,
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (response.ok) {
-              const remoteConfig = await response.json();
-              this.config = remoteConfig;
-              await this.saveConfig(remoteConfig);
-              this.lastFetchTime = now;
-              this.configFileExists = true;
-              console.log('✅ 從遠端載入題庫配置', remoteConfig);
-              return this.config;
-            } else if (response.status === 404) {
-              // 配置文件不存在，記錄狀態，避免重複請求
-              this.configFileExists = false;
-            }
-          } catch (error: any) {
-            // 網絡錯誤、超時或其他錯誤，靜默處理
-            // 如果是 404 或超時，記錄狀態
-            if (error?.name === 'AbortError' || error?.message?.includes('404') || error?.name === 'TypeError') {
-              this.configFileExists = false;
-            }
+      // 在 React Native 平台，使用 require
+      if (Platform.OS !== 'web') {
+        try {
+          // 動態載入對應版本的配置檔案
+          const configMap: Record<string, () => QuizLibraryConfig[]> = {
+            'default': () => require('../../assets/config/versions/default/quiz-library-config.json'),
+            'government-procurement': () => require('../../assets/config/versions/government-procurement/quiz-library-config.json'),
+          };
+          
+          const loader = configMap[version];
+          if (loader) {
+            const fileConfig = loader();
+            console.log(`✅ [QuizLibraryConfig] 從檔案載入配置 (${version}):`, fileConfig);
+            return fileConfig;
           }
-        } else {
-          // 使用快取的配置
-          console.log('📦 使用快取的配置');
-          return this.config;
+        } catch (error) {
+          console.warn(`⚠️ [QuizLibraryConfig] 無法使用 require 載入配置 (${version}):`, error);
         }
       }
 
-      // 從本地儲存載入
+      // 在 Web 平台，使用 fetch
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const configPath = `/assets/config/versions/${version}/quiz-library-config.json`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超時
+          
+          const response = await fetch(`${configPath}?t=${Date.now()}`, {
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const fileConfig = await response.json();
+            console.log(`✅ [QuizLibraryConfig] 從檔案載入配置 (${version}):`, fileConfig);
+            return fileConfig;
+          } else if (response.status === 404) {
+            this.configFileExists = false;
+          }
+        } catch (error: any) {
+          if (error?.name === 'AbortError' || error?.message?.includes('404') || error?.name === 'TypeError') {
+            this.configFileExists = false;
+          }
+          console.warn(`⚠️ [QuizLibraryConfig] 無法使用 fetch 載入配置 (${version}):`, error);
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ [QuizLibraryConfig] 載入配置檔案失敗 (${version}):`, error);
+    }
+    return null;
+  }
+
+  /**
+   * 載入配置（優先從檔案，失敗則使用本地）
+   */
+  async loadConfig(): Promise<QuizLibraryConfig[]> {
+    try {
+      // 取得當前版本
+      const version = await VersionConfigService.getCurrentVersion();
+      console.log(`📋 [QuizLibraryConfig] 當前版本: ${version}`);
+
+      // 優先從檔案載入配置
+      const fileConfig = await this.loadConfigFromFile(version);
+      if (fileConfig) {
+        this.config = fileConfig;
+        // 更新 AsyncStorage 以保持同步
+        await this.saveConfig(fileConfig);
+        this.lastFetchTime = Date.now();
+        this.configFileExists = true;
+        console.log('✅ [QuizLibraryConfig] 使用檔案配置:', this.config);
+        return this.config;
+      }
+
+      // 如果無法從檔案載入，嘗試從本地儲存載入
       try {
         const localConfig = await AsyncStorage.getItem(QUIZ_LIBRARY_CONFIG_KEY);
         if (localConfig) {
           this.config = JSON.parse(localConfig);
+          console.log('✅ [QuizLibraryConfig] 從本地儲存載入配置:', this.config);
           return this.config;
         }
       } catch (error) {
-        console.warn('無法從 AsyncStorage 載入配置:', error);
+        console.warn('⚠️ [QuizLibraryConfig] 無法從 AsyncStorage 載入配置:', error);
       }
 
       // 使用預設配置
       this.config = DEFAULT_CONFIG;
       await this.saveConfig(DEFAULT_CONFIG);
+      console.log('✅ [QuizLibraryConfig] 使用預設配置:', this.config);
       return this.config;
     } catch (error) {
-      console.error('❌ 載入題庫配置失敗:', error);
+      console.error('❌ [QuizLibraryConfig] 載入題庫配置失敗:', error);
       return DEFAULT_CONFIG;
     }
   }

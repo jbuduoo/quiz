@@ -19,5 +19,10 @@ if (!config.resolver.assetExts.includes('json')) {
   config.resolver.assetExts.push('json');
 }
 
+// 配置 watchFolders 以確保 Metro 正確監視 assets 目錄
+config.watchFolders = [
+  path.resolve(__dirname, 'assets'),
+];
+
 module.exports = config;
 

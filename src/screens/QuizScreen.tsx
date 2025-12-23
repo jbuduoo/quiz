@@ -27,6 +27,7 @@ import { getTestNameDisplay, getSubjectDisplay } from '../utils/nameMapper';
 import { useTheme } from '../contexts/ThemeContext';
 import { loadLocalQuestionFile } from '../utils/fileLoader';
 import { loadImportedQuestionFile } from '../services/ImportService';
+import { isTrueFalseQuestion, isTrueFalseAnswerEquivalent, isMultipleChoice as isMultipleChoiceHelper, isEssayQuestion } from '../utils/questionTypeHelper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type QuizRouteProp = RouteProp<RootStackParamList, 'Quiz'>;
@@ -82,8 +83,7 @@ const QuizScreen = () => {
     if (questions.length > 0 && currentIndex < questions.length) {
       const currentQuestion = questions[currentIndex];
       if (currentQuestion) {
-        const correctAnswer = String(currentQuestion.Ans);
-        const isMultiple = correctAnswer.includes(',');
+        const isMultiple = isMultipleChoiceHelper(currentQuestion);
         setIsMultipleChoice(isMultiple);
         if (!isMultiple) {
           // 單選題重置為單選模式
@@ -144,6 +144,8 @@ const QuizScreen = () => {
                 Ans: String(q.Ans || q.correctAnswer || 'A'),
                 exp: String(q.exp || q.Exp || q.explanation || ''),
                 questionNumber: q.questionNumber || index + 1,
+                // 支援 Type 欄位（新格式）
+                Type: q.Type,
               };
             });
             console.log(`✅ [QuizScreen] loadQuestions: 從 AsyncStorage 載入並標準化完成，題數: ${questionsData.length}`);
@@ -228,6 +230,8 @@ const QuizScreen = () => {
                         Ans: String(q.Ans || q.correctAnswer || 'A'),
                         exp: String(q.Exp || q.exp || q.explanation || ''),
                         questionNumber: index + 1,
+                        // 支援 Type 欄位（新格式）
+                        Type: q.Type,
                       };
                     });
                     console.log(`✅ [QuizScreen] loadQuestions: 標準化完成，題數: ${questionsData.length}`);
@@ -285,8 +289,7 @@ const QuizScreen = () => {
       setSelectedAnswer(savedAnswer);
       
       // 如果是複選題且答案包含逗號，解析為陣列
-      const correctAnswer = String(currentQuestion.Ans);
-      const isMultiple = correctAnswer.includes(',');
+      const isMultiple = isMultipleChoiceHelper(currentQuestion);
       if (isMultiple && savedAnswer && typeof savedAnswer === 'string' && savedAnswer.includes(',')) {
         setSelectedAnswers(savedAnswer.split(',').map(a => a.trim()) as Array<'A' | 'B' | 'C' | 'D' | 'E'>);
       } else if (isMultiple) {
@@ -321,7 +324,7 @@ const QuizScreen = () => {
 
     const currentQuestion = questions[currentIndex];
     const correctAnswer = String(currentQuestion.Ans);
-    const isMultiple = correctAnswer.includes(',');
+    const isMultiple = isMultipleChoiceHelper(currentQuestion);
 
     if (isMultiple) {
       // 複選題：切換選項選擇狀態
@@ -334,9 +337,19 @@ const QuizScreen = () => {
       });
       // 不立即顯示結果，等待提交
     } else {
-      // 單選題：立即顯示結果（保持原有邏輯）
+      // 單選題或是非題：立即顯示結果
       setSelectedAnswer(option);
-      const correct = option === correctAnswer;
+      
+      // 處理是非題的特殊答案格式
+      let correct: boolean;
+      if (isTrueFalseQuestion(currentQuestion)) {
+        // 是非題：使用等價比較（O/A/是 等價，X/B/否 等價）
+        correct = isTrueFalseAnswerEquivalent(option, correctAnswer, currentQuestion);
+      } else {
+        // 一般單選題：直接比較
+        correct = option === correctAnswer;
+      }
+      
       setIsCorrect(correct);
       setShowResult(true);
 
@@ -566,12 +579,7 @@ const QuizScreen = () => {
     questions.forEach(q => {
       const answer = userAnswers[q.id];
       // 檢測是否為問答題
-      const isEssayQuestion = 
-        (!q.A || q.A.trim() === '') &&
-        (!q.B || q.B.trim() === '') &&
-        (!q.C || q.C.trim() === '') &&
-        (!q.D || q.D.trim() === '') &&
-        (!q.E || q.E === undefined || q.E.trim() === '');
+      const isEssay = isEssayQuestion(q);
       
       if (answer?.isAnswered) {
         if (answer.isCorrect) {
@@ -579,7 +587,7 @@ const QuizScreen = () => {
         } else {
           wrongCount++;
         }
-      } else if (isEssayQuestion) {
+      } else if (isEssay) {
         // 問答題如果未答過，自動當作答對處理
         correctCount++;
       }
@@ -611,16 +619,11 @@ const QuizScreen = () => {
     for (const q of questions) {
       const answer = userAnswers[q.id];
       // 檢測是否為問答題
-      const isEssayQuestion = 
-        (!q.A || q.A.trim() === '') &&
-        (!q.B || q.B.trim() === '') &&
-        (!q.C || q.C.trim() === '') &&
-        (!q.D || q.D.trim() === '') &&
-        (!q.E || q.E === undefined || q.E.trim() === '');
+      const isEssay = isEssayQuestion(q);
       
       if (answer?.isAnswered) {
         completedCount++;
-      } else if (isEssayQuestion) {
+      } else if (isEssay) {
         // 問答題如果未答過，自動標記為答對
         completedCount++;
         await QuestionService.updateUserAnswer(q.id, {
@@ -637,15 +640,10 @@ const QuizScreen = () => {
     for (const question of questions) {
       const answer = userAnswers[question.id];
       // 檢測是否為問答題
-      const isEssayQuestion = 
-        (!question.A || question.A.trim() === '') &&
-        (!question.B || question.B.trim() === '') &&
-        (!question.C || question.C.trim() === '') &&
-        (!question.D || question.D.trim() === '') &&
-        (!question.E || question.E === undefined || question.E.trim() === '');
+      const isEssay = isEssayQuestion(question);
       
       if (!answer || !answer.isAnswered) {
-        if (isEssayQuestion) {
+        if (isEssay) {
           // 問答題自動標記為答對
           await QuestionService.updateUserAnswer(question.id, {
             isCorrect: true,
@@ -672,12 +670,7 @@ const QuizScreen = () => {
     questions.forEach(q => {
       const answer = updatedAnswers[q.id];
       // 檢測是否為問答題
-      const isEssayQuestion = 
-        (!q.A || q.A.trim() === '') &&
-        (!q.B || q.B.trim() === '') &&
-        (!q.C || q.C.trim() === '') &&
-        (!q.D || q.D.trim() === '') &&
-        (!q.E || q.E === undefined || q.E.trim() === '');
+      const isEssay = isEssayQuestion(q);
       
       if (answer?.isAnswered) {
         if (answer.isCorrect) {
@@ -685,7 +678,7 @@ const QuizScreen = () => {
         } else {
           wrongCount++;
         }
-      } else if (isEssayQuestion) {
+      } else if (isEssay) {
         // 問答題如果未答過，自動當作答對處理
         correctCount++;
       }
@@ -749,14 +742,9 @@ const QuizScreen = () => {
       console.log('📋 [QuizScreen] handleConfirm: 發現未答題目，開始標記');
       for (const question of unAnsweredQuestions) {
         // 檢測是否為問答題
-        const isEssayQuestion = 
-          (!question.A || question.A.trim() === '') &&
-          (!question.B || question.B.trim() === '') &&
-          (!question.C || question.C.trim() === '') &&
-          (!question.D || question.D.trim() === '') &&
-          (!question.E || question.E === undefined || question.E.trim() === '');
+        const isEssay = isEssayQuestion(question);
         
-        if (isEssayQuestion) {
+        if (isEssay) {
           // 問答題自動標記為答對
           await QuestionService.updateUserAnswer(question.id, {
             isCorrect: true,
@@ -1032,15 +1020,11 @@ const QuizScreen = () => {
 
         {(() => {
           // 檢測是否為問答題（所有選項都為空）
-          const isEssayQuestion = 
-            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
-            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
-            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
-            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
-            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
+          // 檢測是否為問答題
+          const isEssay = isEssayQuestion(currentQuestion);
 
           // 如果是問答題，顯示「顯示答案」按鈕
-          if (isEssayQuestion) {
+          if (isEssay) {
             // 按下按鈕後，橘色區域就不顯示了
             if (!showEssayAnswer) {
               return (
@@ -1133,12 +1117,16 @@ const QuizScreen = () => {
               ? selectedAnswers.includes(option)
               : Boolean(selectedAnswer === option);
             
-            // 檢查是否為正確選項（支援複選）
+            // 檢查是否為正確選項（支援複選和是非題）
             const correctAnswer = String(currentQuestion.Ans);
             let isCorrectOption = false;
-            if (correctAnswer.includes(',')) {
+            const isMultiple = isMultipleChoiceHelper(currentQuestion);
+            if (isMultiple) {
               const correctOptions = correctAnswer.split(',').map(a => a.trim());
               isCorrectOption = correctOptions.includes(option);
+            } else if (isTrueFalseQuestion(currentQuestion)) {
+              // 是非題：使用等價比較
+              isCorrectOption = isTrueFalseAnswerEquivalent(option, correctAnswer, currentQuestion);
             } else {
               isCorrectOption = option === correctAnswer;
             }
@@ -1214,12 +1202,7 @@ const QuizScreen = () => {
 
         {showResult && (() => {
           // 檢測是否為問答題
-          const isEssayQuestion = 
-            (!currentQuestion.A || currentQuestion.A.trim() === '') &&
-            (!currentQuestion.B || currentQuestion.B.trim() === '') &&
-            (!currentQuestion.C || currentQuestion.C.trim() === '') &&
-            (!currentQuestion.D || currentQuestion.D.trim() === '') &&
-            (!currentQuestion.E || currentQuestion.E === undefined || currentQuestion.E.trim() === '');
+          const isEssay = isEssayQuestion(currentQuestion);
           
           // 問答題和非問答題都顯示完整的結果和詳解（詳解放在選項下方，與選擇題相同位置）
           return (
@@ -1229,7 +1212,7 @@ const QuizScreen = () => {
                   <Text style={[styles.resultText, isCorrect ? styles.resultTextCorrect : styles.resultTextWrong]}>
                     {isCorrect ? '✓ 答對了！' : '✗ 答錯了'}
                   </Text>
-                  {!isCorrect && !isEssayQuestion && (
+                  {!isCorrect && !isEssay && (
                     <Text style={styles.correctAnswerText}>
                       正確答案：{currentQuestion.Ans}
                     </Text>

@@ -1,0 +1,27 @@
+[
+  {
+    "testName": "IPAS_01",
+    "enabled": true,
+    "displayName": "IPAS AI應用規劃師初級",
+    "displayOrder": 1
+  },
+  {
+    "testName": "IPAS_02",
+    "enabled": true,
+    "displayName": "IPAS AI應用規劃師中級",
+    "displayOrder": 2
+  },
+  {
+    "testName": "JAVA",
+    "enabled": true,
+    "displayName": "Java 程式設計認證",
+    "displayOrder": 3
+  },
+  {
+    "testName": "AZ900",
+    "enabled": true,
+    "displayName": "AZ900",
+    "displayOrder": 4
+  }
+]
+
