@@ -83,3 +83,20 @@ export interface WrongBookFilter {
   onlyFavorite?: boolean;         // 僅複習收藏題
 }
 
+// 群組子項目
+export interface QuestionFileChild {
+  series_no: string;
+  displayName?: string;
+  file: string;
+  count: number;
+  testName?: string;
+  subject?: string;
+}
+
+// 群組項目
+export interface QuestionFileGroup {
+  series_no: string;
+  displayName: string;
+  children: QuestionFileChild[];
+}
+

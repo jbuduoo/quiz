@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Question, UserAnswer, Chapter, TestName, Subject, Series, QuestionType } from '../types';
+import { Question, UserAnswer, Chapter, TestName, Subject, Series, QuestionType, QuestionFileGroup } from '../types';
 import { loadImportedQuestionFile, getImportedQuestionFiles } from './ImportService';
 import { loadLocalQuestionFile } from '../utils/fileLoader';
 import QuizLibraryConfigService from './QuizLibraryConfigService';
@@ -27,6 +27,7 @@ interface IndexData {
   enabled?: boolean;  // 題庫是否啟用（新格式）
   displayName?: string;  // 題庫顯示名稱（新格式）
   displayOrder?: number;  // 題庫顯示順序（新格式）
+  enableList?: boolean;  // 是否啟用二層列表（新格式）
   
   // 舊格式：嵌套結構（向後相容）
   metadata?: {
@@ -65,6 +66,18 @@ interface IndexData {
     file: string;
     count: number;
   }>;
+  questionListFiles?: Array<{  // 二層列表結構（新格式）
+    series_no: string;
+    displayName: string;
+    children: Array<{
+      series_no: string;
+      displayName?: string;
+      file: string;
+      count: number;
+      testName?: string;
+      subject?: string;
+    }>;
+  }>;
 }
 
 // 題目檔案資料結構（新格式：簡化版）
@@ -95,9 +108,10 @@ const indexMap: () => IndexData | any = () => require('../../assets/data/questio
 function expandConfig(data: any): IndexData {
   // 如果有 config 物件，展開它
   if (data && data.config && typeof data.config === 'object') {
-    const { config, questionFiles, ...rest } = data;
+    const { config, questionFiles, questionListFiles, ...rest } = data;
     const expanded: any = {
       questionFiles: questionFiles || data.questionFiles,  // 保留 questionFiles
+      questionListFiles: questionListFiles || data.questionListFiles,  // 保留 questionListFiles
       ...rest,  // 保留其他頂層欄位（向後相容）
     };
     
@@ -114,6 +128,7 @@ function expandConfig(data: any): IndexData {
       expanded.enabled = config.enabled !== undefined ? config.enabled : true; // 預設為 true（啟用）
       expanded.displayName = config.displayName;
       expanded.displayOrder = config.displayOrder;
+      expanded.enableList = config.enableList !== undefined ? config.enableList : false;  // 新增
       
       // 同時建立舊格式結構以保持向後相容
       expanded.metadata = {
@@ -163,15 +178,22 @@ async function loadIndexData(): Promise<IndexData | null> {
         console.log('📂 [loadIndexData] require 成功，檢查資料結構', {
           hasIndexModule: !!indexModule,
           hasQuestionFiles: !!indexModule?.questionFiles,
-          questionFilesLength: indexModule?.questionFiles?.length
+          questionFilesLength: indexModule?.questionFiles?.length,
+          enableList: indexModule?.enableList,
+          hasQuestionListFiles: !!indexModule?.questionListFiles,
+          questionListFilesLength: indexModule?.questionListFiles?.length
         });
-        if (indexModule && indexModule.questionFiles) {
-          console.log(`✅ [loadIndexData] 成功載入索引資料（${indexModule.questionFiles.length} 個題目檔案）`);
+        if (indexModule && (indexModule.questionFiles || indexModule.questionListFiles)) {
+          const fileCount = indexModule.enableList 
+            ? (indexModule.questionListFiles?.length || 0)
+            : (indexModule.questionFiles?.length || 0);
+          console.log(`✅ [loadIndexData] 成功載入索引資料（${fileCount} 個${indexModule.enableList ? '群組' : '題目檔案'}）`);
           return indexModule;
         } else {
           console.warn('⚠️ [loadIndexData] 索引資料結構不完整', {
             hasIndexModule: !!indexModule,
-            hasQuestionFiles: !!indexModule?.questionFiles
+            hasQuestionFiles: !!indexModule?.questionFiles,
+            hasQuestionListFiles: !!indexModule?.questionListFiles
           });
         }
       } catch (requireError) {
@@ -204,10 +226,16 @@ async function loadIndexData(): Promise<IndexData | null> {
           console.log('📂 [loadIndexData] fetch JSON 解析成功', {
             hasData: !!data,
             hasQuestionFiles: !!data?.questionFiles,
-            questionFilesLength: data?.questionFiles?.length
+            questionFilesLength: data?.questionFiles?.length,
+            enableList: data?.enableList,
+            hasQuestionListFiles: !!data?.questionListFiles,
+            questionListFilesLength: data?.questionListFiles?.length
           });
-          if (data && data.questionFiles) {
-            console.log(`✅ [loadIndexData] 成功從 Web 載入索引資料（${data.questionFiles.length} 個題目檔案）`);
+          if (data && (data.questionFiles || data.questionListFiles)) {
+            const fileCount = data.enableList 
+              ? (data.questionListFiles?.length || 0)
+              : (data.questionFiles?.length || 0);
+            console.log(`✅ [loadIndexData] 成功從 Web 載入索引資料（${fileCount} 個${data.enableList ? '群組' : '題目檔案'}）`);
             return data;
           }
         } else {
@@ -1743,7 +1771,81 @@ class QuestionService {
       return [];
     }
     
+    // 如果啟用二層列表，從 questionListFiles 扁平化取得所有子項目
+    if (this.indexData.enableList && this.indexData.questionListFiles) {
+      const flattened: Array<{
+        testName?: string;
+        subject?: string;
+        series_no: string;
+        displayName?: string;
+        file: string;
+        count: number;
+      }> = [];
+      
+      for (const group of this.indexData.questionListFiles) {
+        for (const child of group.children) {
+          flattened.push({
+            testName: child.testName,
+            subject: child.subject,
+            series_no: child.series_no,
+            displayName: child.displayName,
+            file: child.file,
+            count: child.count,
+          });
+        }
+      }
+      
+      return flattened;
+    }
+    
     return this.indexData.questionFiles || [];
+  }
+
+  // 取得索引資料（用於檢查 enableList）
+  async getIndexData(): Promise<IndexData | null> {
+    if (!this.indexData) {
+      this.indexData = await loadIndexData();
+    }
+    return this.indexData;
+  }
+
+  // 取得二層列表的群組資料
+  async getQuestionListFiles(): Promise<QuestionFileGroup[]> {
+    if (!this.indexData) {
+      this.indexData = await loadIndexData();
+    }
+    
+    if (!this.indexData || !this.indexData.enableList) {
+      return [];
+    }
+    
+    return this.indexData.questionListFiles || [];
+  }
+
+  // 取得二層列表配置
+  async getListConfig(): Promise<{
+    enableImport: boolean;
+    enableTrash: boolean;
+    enableFavor: boolean;
+  }> {
+    if (!this.indexData) {
+      this.indexData = await loadIndexData();
+    }
+    
+    if (!this.indexData) {
+      return {
+        enableImport: false,
+        enableTrash: false,
+        enableFavor: false,
+      };
+    }
+    
+    // 使用根層級的配置
+    return {
+      enableImport: this.indexData.enableImport ?? false,
+      enableTrash: this.indexData.enableTrash ?? false,
+      enableFavor: this.indexData.enableFavor ?? false,
+    };
   }
 
   // 合併匯入的索引到主索引

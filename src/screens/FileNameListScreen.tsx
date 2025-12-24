@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -40,6 +40,9 @@ interface FileNameItem {
   isWrongBook?: boolean; // 是否為錯題本項目
   testName?: string; // 測驗名稱（用於索引檔案）
   series_no?: string; // 期數（用於索引檔案）
+  isGroup?: boolean; // 是否為群組項目
+  groupId?: string; // 群組 ID（如果是子項目）
+  children?: FileNameItem[]; // 子項目（如果是群組）
 }
 
 const FileNameListScreen = () => {
@@ -56,6 +59,8 @@ const FileNameListScreen = () => {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [appConfig, setAppConfig] = useState<{ enableImport: boolean; enableTrash: boolean; enableFavor: boolean } | null>(null);
   const [appName, setAppName] = useState<string>('樂題庫'); // 預設值
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set()); // 展開的群組 ID
+  const [isListMode, setIsListMode] = useState<boolean>(false); // 是否為二層列表模式
   const { colors, textSizeValue, titleTextSizeValue } = useTheme();
 
   useEffect(() => {
@@ -65,12 +70,28 @@ const FileNameListScreen = () => {
 
   const loadAppConfig = async () => {
     try {
-      const config = await AppConfigService.getConfig();
-      setAppConfig({
-        enableImport: config.enableImport,
-        enableTrash: config.enableTrash,
-        enableFavor: config.enableFavor,
-      });
+      // 檢查是否啟用二層列表
+      const indexData = await QuestionService.getIndexData();
+      const enableList = indexData?.enableList || false;
+      setIsListMode(enableList);
+      
+      if (enableList) {
+        // 使用 listConfig
+        const listConfig = await QuestionService.getListConfig();
+        setAppConfig({
+          enableImport: listConfig.enableImport,
+          enableTrash: listConfig.enableTrash,
+          enableFavor: listConfig.enableFavor,
+        });
+      } else {
+        // 使用原有的配置
+        const config = await AppConfigService.getConfig();
+        setAppConfig({
+          enableImport: config.enableImport,
+          enableTrash: config.enableTrash,
+          enableFavor: config.enableFavor,
+        });
+      }
     } catch (error) {
       console.error('載入應用程式配置失敗:', error);
       // 預設配置
@@ -397,11 +418,156 @@ const FileNameListScreen = () => {
       
       const fileItems: FileNameItem[] = [];
       
-      // 先添加索引檔案中的 questionFiles（系統預設檔案）
-      console.log('📋 [FileNameListScreen] loadData: 載入索引檔案中的 questionFiles');
-      try {
-        const questionFiles = await QuestionService.getQuestionFiles();
-        console.log(`📋 [FileNameListScreen] loadData: 找到 ${questionFiles.length} 個索引檔案`);
+      // 檢查是否啟用二層列表
+      const indexData = await QuestionService.getIndexData();
+      const enableList = indexData?.enableList || false;
+      setIsListMode(enableList);
+      
+      if (enableList) {
+        // 二層列表模式：載入群組結構
+        console.log('📋 [FileNameListScreen] loadData: 載入二層列表結構');
+        const questionListFiles = await QuestionService.getQuestionListFiles();
+        console.log(`📋 [FileNameListScreen] loadData: 找到 ${questionListFiles.length} 個群組`);
+        
+        // 載入索引資料以取得根層級的 testName 和 appName
+        let rootTestNameValue: string | undefined = undefined;
+        let appNameValue: string | undefined = undefined;
+        try {
+          const { default: VersionConfigService } = await import('../services/VersionConfigService');
+          const indexFileUrl = await VersionConfigService.getIndexFileUrl();
+          
+          if (typeof window === 'undefined') {
+            try {
+              const indexDataRaw = require('../../assets/data/questions/questions.json');
+              rootTestNameValue = indexDataRaw?.testName;
+              appNameValue = indexDataRaw?.appName || indexDataRaw?.config?.appName;
+            } catch (error) {
+              console.warn('⚠️ [FileNameListScreen] 無法使用 require 載入索引:', error);
+            }
+          } else {
+            const response = await fetch(indexFileUrl);
+            if (response.ok) {
+              const indexDataRaw = await response.json();
+              rootTestNameValue = indexDataRaw?.testName;
+              appNameValue = indexDataRaw?.appName || indexDataRaw?.config?.appName;
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [FileNameListScreen] loadData: 無法載入索引資料取得根層級 testName:', error);
+        }
+        
+        if (appNameValue) {
+          setAppName(appNameValue);
+        }
+        
+        // 處理每個群組
+        for (const group of questionListFiles) {
+          const groupChildren: FileNameItem[] = [];
+          
+          // 處理群組內的子項目
+          for (const child of group.children) {
+            try {
+              const fileName = child.file;
+              console.log(`📋 [FileNameListScreen] loadData: 處理群組 ${group.series_no} 的子項目: ${fileName}`);
+              
+              // 載入題目檔案
+              let questions: Question[] = [];
+              try {
+                const testNameForId = child.testName || rootTestNameValue || '';
+                const subjectForId = child.subject || null;
+                const seriesNoForId = child.series_no || '';
+                
+                const fileData = await loadLocalQuestionFile(fileName);
+                if (!fileData) {
+                  console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 載入失敗`);
+                  continue;
+                }
+                
+                const isArray = Array.isArray(fileData);
+                const questionsArray = isArray ? fileData : (fileData.questions || []);
+                
+                if (questionsArray.length === 0) {
+                  console.warn(`⚠️ [FileNameListScreen] loadData: ${fileName} 沒有題目，跳過`);
+                  continue;
+                }
+                
+                questions = questionsArray.map((q: any, index: number) => {
+                  const questionIdFromFile = q.Id || q.id || String(index + 1);
+                  const questionId = `${seriesNoForId}_${questionIdFromFile}`;
+                  const rawContent = String(q.Q || q.content || '');
+                  const cleanedContent = rawContent.replace(/^\d+\.?\s+/, '');
+                  const EValue = (q.E !== undefined && q.E !== null && String(q.E).trim() !== '') 
+                    ? String(q.E) 
+                    : (q.options?.E !== undefined && q.options?.E !== null && String(q.options.E).trim() !== '')
+                      ? String(q.options.E)
+                      : undefined;
+                  
+                  return {
+                    id: questionId,
+                    content: cleanedContent,
+                    A: String(q.A || q.options?.A || ''),
+                    B: String(q.B || q.options?.B || ''),
+                    C: String(q.C || q.options?.C || ''),
+                    D: String(q.D || q.options?.D || ''),
+                    E: EValue,
+                    Ans: String(q.Ans || q.correctAnswer || 'A'),
+                    exp: String(q.Exp || q.exp || q.explanation || ''),
+                    questionNumber: index + 1,
+                    testName: testNameForId,
+                    subject: subjectForId || undefined,
+                    series_no: seriesNoForId,
+                    Type: q.Type,
+                  } as Question;
+                });
+              } catch (loadError) {
+                console.error(`❌ [FileNameListScreen] loadData: 載入 ${fileName} 失敗:`, loadError);
+                continue;
+              }
+              
+              // 計算已完成題數
+              const userAnswers = await QuestionService.getUserAnswers();
+              let completedCount = 0;
+              questions.forEach((q: Question) => {
+                const answer = userAnswers[q.id];
+                if (answer?.isAnswered) {
+                  completedCount++;
+                }
+              });
+              
+              groupChildren.push({
+                id: fileName,
+                fileName: fileName,
+                displayName: child.displayName || fileName,
+                fileCount: questions.length,
+                completedCount: completedCount,
+                testName: child.testName || rootTestNameValue || '',
+                series_no: child.series_no || '',
+                groupId: group.series_no,
+              });
+            } catch (error) {
+              console.error(`❌ [FileNameListScreen] loadData: 處理子項目 ${child.file} 失敗:`, error);
+            }
+          }
+          
+          // 添加群組項目
+          if (groupChildren.length > 0) {
+            fileItems.push({
+              id: `group_${group.series_no}`,
+              fileName: '',
+              displayName: group.displayName,
+              fileCount: groupChildren.reduce((sum, child) => sum + child.fileCount, 0),
+              completedCount: groupChildren.reduce((sum, child) => sum + (child.completedCount || 0), 0),
+              isGroup: true,
+              children: groupChildren,
+            });
+          }
+        }
+      } else {
+        // 原有的一層列表模式
+        console.log('📋 [FileNameListScreen] loadData: 載入索引檔案中的 questionFiles');
+        try {
+          const questionFiles = await QuestionService.getQuestionFiles();
+          console.log(`📋 [FileNameListScreen] loadData: 找到 ${questionFiles.length} 個索引檔案`);
         
         // 載入索引資料以取得根層級的 testName 和 appName
         // 直接載入索引檔案來取得根層級的 testName 和 appName
@@ -566,6 +732,7 @@ const FileNameListScreen = () => {
       } catch (error) {
         console.error(`❌ [FileNameListScreen] loadData: 載入索引檔案失敗:`, error);
       }
+      }
       
       // 讀取匯入的題庫檔案
       console.log('📋 [FileNameListScreen] loadData: 讀取匯入的題庫檔案');
@@ -700,7 +867,111 @@ const FileNameListScreen = () => {
     }
   };
 
+  // 切換群組展開/收合
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  };
+
+  // 動態生成顯示列表（根據群組展開狀態）
+  const displayItems = useMemo(() => {
+    if (!isListMode) {
+      return fileNames;
+    }
+    
+    const items: FileNameItem[] = [];
+    
+    for (const item of fileNames) {
+      if (item.isGroup) {
+        // 添加群組項目
+        items.push(item);
+        
+        // 如果群組展開，添加子項目
+        if (expandedGroups.has(item.id) && item.children) {
+          items.push(...item.children);
+        }
+      } else {
+        // 普通項目直接添加
+        items.push(item);
+      }
+    }
+    
+    return items;
+  }, [fileNames, expandedGroups, isListMode]);
+
+  // 渲染群組項目（只渲染群組標題，不包含子項目）
+  const renderGroupItem = ({ item }: { item: FileNameItem }) => {
+    if (!item.isGroup) {
+      return null;
+    }
+    
+    const isExpanded = expandedGroups.has(item.id);
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.groupHeader,
+          {
+            backgroundColor: colors.surface,
+            borderBottomColor: colors.border,
+            marginBottom: 8,
+            borderRadius: 8,
+          },
+        ]}
+        onPress={() => toggleGroup(item.id)}
+      >
+        <View style={styles.groupHeaderContent}>
+          <Text
+            style={[
+              styles.groupTitle,
+              {
+                color: colors.text,
+                fontSize: titleTextSizeValue,
+              },
+            ]}
+          >
+            {item.displayName}
+          </Text>
+          <Text
+            style={[
+              styles.groupSubtitle,
+              {
+                color: colors.textSecondary,
+                fontSize: textSizeValue - 2,
+              },
+            ]}
+          >
+            {item.completedCount || 0} / {item.fileCount} 已完成
+          </Text>
+        </View>
+        <Text
+          style={[
+            styles.groupExpandIcon,
+            {
+              color: colors.text,
+              fontSize: titleTextSizeValue,
+            },
+          ]}
+        >
+          {isExpanded ? '▼' : '▶'}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   const renderFileNameItem = ({ item }: { item: FileNameItem }) => {
+    // 如果是群組項目，使用群組渲染函數
+    if (item.isGroup) {
+      return renderGroupItem({ item });
+    }
+    
     const isSelected = selectedItems.has(item.id);
     
     const handlePress = async () => {
@@ -1412,8 +1683,15 @@ const FileNameListScreen = () => {
       </View>
 
       <FlatList
-        data={fileNames}
-        renderItem={renderFileNameItem}
+        data={displayItems}
+        renderItem={({ item }) => {
+          // 如果是群組項目，使用群組渲染函數
+          if (item.isGroup) {
+            return renderGroupItem({ item });
+          }
+          // 子項目和普通項目使用相同的渲染函數
+          return renderFileNameItem({ item });
+        }}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
       />
@@ -1981,6 +2259,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  groupContainer: {
+    marginBottom: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  groupHeaderContent: {
+    flex: 1,
+  },
+  groupTitle: {
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  groupSubtitle: {
+    opacity: 0.7,
+  },
+  groupExpandIcon: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  groupChildren: {
+    paddingLeft: 16,
+  },
+  childItemContainer: {
+    paddingLeft: 16,
+    borderLeftWidth: 2,
+    borderLeftColor: '#E0E0E0',
   },
 });
 

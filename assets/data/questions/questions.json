@@ -8,7 +8,8 @@
     "enableTrash": false,
     "enableFavor": false,
     "configVersion": "government-procurement",
-    "displayName": "政府採購法"
+    "displayName": "政府採購法",
+    "enableList": false
   },
   "questionFiles": [
     {
@@ -34,6 +35,44 @@
       "displayName": "電子採購實務",
       "file": "2025122304.json",
       "count": 109
+    }
+  ],
+  "questionListFiles": [
+    {
+      "series_no": "group_01",
+      "displayName": "甲級",
+      "children": [
+        {
+          "series_no": "2025122301",
+          "displayName": "工程及技術服務採購作業",
+          "file": "2025122301.json",
+          "count": 183
+        },
+        {
+          "series_no": "2025122302",
+          "displayName": "財物及勞務採購作業",
+          "file": "2025122302.json",
+          "count": 274
+        }
+      ]
+    },
+    {
+      "series_no": "group_02",
+      "displayName": "乙級",
+      "children": [
+        {
+          "series_no": "2025122303",
+          "displayName": "最有利標及評選優勝廠商",
+          "file": "2025122303.json",
+          "count": 163
+        },
+        {
+          "series_no": "2025122304",
+          "displayName": "電子採購實務",
+          "file": "2025122304.json",
+          "count": 109
+        }
+      ]
     }
   ]
 }
