@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import QuestionService from './src/services/QuestionService';
 import SettingsService from './src/services/SettingsService';
+import GeminiService from './src/services/GeminiService';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import TestNameListScreen from './src/screens/TestNameListScreen';
 import SubjectListScreen from './src/screens/SubjectListScreen';
@@ -37,6 +38,13 @@ export default function App() {
     try {
       // 初始化資料
       await QuestionService.initializeData();
+      
+      // 自動設定 Gemini API Key（如果尚未設定）
+      const existingKey = await SettingsService.getGeminiApiKey();
+      if (!existingKey) {
+        const defaultApiKey = 'AIzaSyC8D9kB4M0kmlUEDSpSYOFJ3REIr5xYzSg';
+        await GeminiService.setApiKey(defaultApiKey);
+      }
     } catch (error) {
       console.error('初始化應用程式失敗:', error);
     } finally {
