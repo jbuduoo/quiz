@@ -1,0 +1,92 @@
+name: Android Build (EAS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - app.json
+      - package.json
+      - package-lock.json
+      - eas.json
+      - src/**
+      - assets/**
+      - scripts/**
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [preview, production]
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_NO_VCS_WARNING: 1
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare build assets
+        run: npm run prepare-build
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Build (${{ matrix.profile }})
+        run: |
+          mkdir -p build-results
+          npx eas-cli build --platform android --profile ${{ matrix.profile }} --non-interactive --json > build-results/${{ matrix.profile }}.json
+
+      - name: Fetch latest artifact URL (${{ matrix.profile }})
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          mkdir -p build-results
+          npx eas-cli build:list --platform android --profile ${PROFILE} --status finished --limit 1 --json > build-results/${PROFILE}-latest.json
+
+      - name: Download artifact (${{ matrix.profile }})
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -e
+          mkdir -p artifacts/${PROFILE}
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { execSync } = require('child_process');
+
+          const profile = process.env.PROFILE;
+          const raw = fs.readFileSync(`build-results/${profile}-latest.json`, 'utf8').trim();
+          if (!raw) throw new Error('build list is empty');
+
+          const data = JSON.parse(raw);
+          const build = Array.isArray(data) ? data[0] : (data.builds ? data.builds[0] : data);
+          if (!build) throw new Error('no build entry found');
+
+          const url = build.artifacts?.buildUrl || build.artifacts?.applicationArchiveUrl || build.artifacts?.url;
+          if (!url) throw new Error('artifact url missing');
+
+          const ext = url.includes('.apk') ? 'apk' : 'aab';
+          const out = path.join('artifacts', profile, `app.${ext}`);
+
+          execSync(`curl -L "${url}" -o "${out}"`, { stdio: 'inherit' });
+          console.log('Saved artifact to', out);
+          NODE
+
+      - name: Upload artifact (${{ matrix.profile }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.profile }}
+          path: artifacts/${{ matrix.profile }}
+
