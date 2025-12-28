@@ -55,37 +55,86 @@ jobs:
             const profile = process.env.PROFILE;
             console.log(`Starting EAS build for profile: ${profile}`);
             
-            // Start build
+            // Start build (use --no-wait to get build ID immediately)
             let buildOutput;
+            let buildId;
             try {
+              // Try with --no-wait first
               buildOutput = execSync(
-                `npx eas-cli build --platform android --profile ${profile} --non-interactive --json`,
-                { encoding: 'utf8', stdio: 'pipe' }
+                `npx eas-cli build --platform android --profile ${profile} --non-interactive --no-wait --json 2>&1`,
+                { encoding: 'utf8', stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }
               );
+              
+              // Parse build ID from output
+              const lines = buildOutput.trim().split('\n');
+              let jsonLine = null;
+              
+              // Find the JSON line (usually the last line)
+              for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i].trim();
+                if (line.startsWith('{') && line.endsWith('}')) {
+                  jsonLine = line;
+                  break;
+                }
+              }
+              
+              if (jsonLine) {
+                try {
+                  const buildData = JSON.parse(jsonLine);
+                  buildId = buildData.id || buildData.buildId || buildData.build?.id;
+                } catch (e) {
+                  console.warn('Failed to parse JSON line:', jsonLine);
+                }
+              }
+              
+              // If no build ID found, try to extract from output text
+              if (!buildId) {
+                const idMatch = buildOutput.match(/build[_-]?id["\s:]+([a-zA-Z0-9-]+)/i);
+                if (idMatch) {
+                  buildId = idMatch[1];
+                }
+              }
+              
+              // Print full output for debugging
+              console.log('Full build output:');
+              console.log(buildOutput);
+              
             } catch (error) {
               console.error('Build command failed:', error.message);
-              if (error.stdout) console.log('STDOUT:', error.stdout);
-              if (error.stderr) console.error('STDERR:', error.stderr);
-              process.exit(1);
+              console.error('Exit code:', error.status || error.code);
+              
+              if (error.stdout) {
+                console.log('STDOUT:', error.stdout);
+                // Try to extract build ID even from error output
+                const idMatch = error.stdout.match(/build[_-]?id["\s:]+([a-zA-Z0-9-]+)/i);
+                if (idMatch) {
+                  buildId = idMatch[1];
+                  console.log('Found build ID in error output:', buildId);
+                }
+              }
+              if (error.stderr) {
+                console.error('STDERR:', error.stderr);
+              }
+              
+              // If we have a build ID, continue; otherwise exit
+              if (!buildId) {
+                console.error('No build ID found, exiting');
+                process.exit(1);
+              } else {
+                console.log('Continuing with build ID:', buildId);
+              }
             }
             
-            // Parse build ID
-            let buildData;
-            try {
-              buildData = JSON.parse(buildOutput.trim());
-            } catch (e) {
-              console.error('Failed to parse build output as JSON:', buildOutput);
-              process.exit(1);
-            }
-            
-            const buildId = buildData.id || buildData.buildId || buildData.build?.id;
             if (!buildId) {
-              console.error('Build ID not found in output:', JSON.stringify(buildData, null, 2));
+              console.error('Build ID not found in output');
+              console.log('Output was:', buildOutput);
               process.exit(1);
             }
             
             console.log(`Build ID: ${buildId}`);
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_id=${buildId}\n`);
+            if (process.env.GITHUB_OUTPUT) {
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_id=${buildId}\n`);
+            }
             
             // Wait for build to complete (poll every 30 seconds, max 40 minutes)
             console.log('Waiting for build to complete...');
