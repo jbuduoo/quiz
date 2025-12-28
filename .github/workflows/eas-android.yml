@@ -43,46 +43,90 @@ jobs:
       - name: Install EAS CLI
         run: npm install --global eas-cli
 
-      - name: Build (${{ matrix.profile }})
-        run: |
-          mkdir -p build-results
-          npx eas-cli build --platform android --profile ${{ matrix.profile }} --non-interactive --json > build-results/${{ matrix.profile }}.json
-
-      - name: Fetch latest artifact URL (${{ matrix.profile }})
+      - name: Build and wait for completion (${{ matrix.profile }})
+        id: build
         env:
           PROFILE: ${{ matrix.profile }}
         run: |
-          mkdir -p build-results
-          npx eas-cli build:list --platform android --profile ${PROFILE} --status finished --limit 1 --json > build-results/${PROFILE}-latest.json
+          echo "Starting EAS build for profile: ${PROFILE}"
+          BUILD_OUTPUT=$(npx eas-cli build --platform android --profile ${PROFILE} --non-interactive --json 2>&1)
+          echo "$BUILD_OUTPUT" > build-output.json
+          
+          # Parse build ID from output
+          BUILD_ID=$(echo "$BUILD_OUTPUT" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+          if [ -z "$BUILD_ID" ]; then
+            echo "Failed to get build ID"
+            cat build-output.json
+            exit 1
+          fi
+          
+          echo "Build ID: $BUILD_ID"
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+          
+          # Wait for build to complete (poll every 30 seconds, max 40 minutes)
+          echo "Waiting for build to complete..."
+          MAX_ATTEMPTS=80
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            sleep 30
+            ATTEMPT=$((ATTEMPT + 1))
+            
+            BUILD_STATUS=$(npx eas-cli build:view $BUILD_ID --json 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+            
+            echo "Attempt $ATTEMPT: Build status is $BUILD_STATUS"
+            
+            if [ "$BUILD_STATUS" = "finished" ]; then
+              echo "Build completed successfully!"
+              break
+            elif [ "$BUILD_STATUS" = "errored" ] || [ "$BUILD_STATUS" = "canceled" ]; then
+              echo "Build failed with status: $BUILD_STATUS"
+              npx eas-cli build:view $BUILD_ID --json
+              exit 1
+            fi
+          done
+          
+          if [ "$BUILD_STATUS" != "finished" ]; then
+            echo "Build did not complete within timeout"
+            exit 1
+          fi
 
       - name: Download artifact (${{ matrix.profile }})
         env:
           PROFILE: ${{ matrix.profile }}
+          BUILD_ID: ${{ steps.build.outputs.build_id }}
         run: |
           set -e
           mkdir -p artifacts/${PROFILE}
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const { execSync } = require('child_process');
-
-          const profile = process.env.PROFILE;
-          const raw = fs.readFileSync(`build-results/${profile}-latest.json`, 'utf8').trim();
-          if (!raw) throw new Error('build list is empty');
-
-          const data = JSON.parse(raw);
-          const build = Array.isArray(data) ? data[0] : (data.builds ? data.builds[0] : data);
-          if (!build) throw new Error('no build entry found');
-
-          const url = build.artifacts?.buildUrl || build.artifacts?.applicationArchiveUrl || build.artifacts?.url;
-          if (!url) throw new Error('artifact url missing');
-
-          const ext = url.includes('.apk') ? 'apk' : 'aab';
-          const out = path.join('artifacts', profile, `app.${ext}`);
-
-          execSync(`curl -L "${url}" -o "${out}"`, { stdio: 'inherit' });
-          console.log('Saved artifact to', out);
-          NODE
+          
+          # Get build details
+          BUILD_JSON=$(npx eas-cli build:view $BUILD_ID --json)
+          echo "$BUILD_JSON" > build-details.json
+          
+          # Extract download URL
+          URL=$(echo "$BUILD_JSON" | grep -o '"buildUrl":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+          if [ -z "$URL" ]; then
+            URL=$(echo "$BUILD_JSON" | grep -o '"applicationArchiveUrl":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+          fi
+          
+          if [ -z "$URL" ]; then
+            echo "Failed to get download URL"
+            cat build-details.json
+            exit 1
+          fi
+          
+          echo "Download URL: $URL"
+          
+          # Determine file extension
+          if echo "$URL" | grep -q "\.apk"; then
+            EXT="apk"
+          else
+            EXT="aab"
+          fi
+          
+          OUT_FILE="artifacts/${PROFILE}/app.${EXT}"
+          curl -L "$URL" -o "$OUT_FILE"
+          echo "Downloaded to: $OUT_FILE"
 
       - name: Upload artifact (${{ matrix.profile }})
         uses: actions/upload-artifact@v4
