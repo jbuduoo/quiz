@@ -48,85 +48,155 @@ jobs:
         env:
           PROFILE: ${{ matrix.profile }}
         run: |
-          echo "Starting EAS build for profile: ${PROFILE}"
-          BUILD_OUTPUT=$(npx eas-cli build --platform android --profile ${PROFILE} --non-interactive --json 2>&1)
-          echo "$BUILD_OUTPUT" > build-output.json
+          node <<'NODE'
+          const { execSync } = require('child_process');
+          const fs = require('fs');
+          const { promisify } = require('util');
+          const sleep = promisify(setTimeout);
           
-          # Parse build ID from output
-          BUILD_ID=$(echo "$BUILD_OUTPUT" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
-          if [ -z "$BUILD_ID" ]; then
-            echo "Failed to get build ID"
-            cat build-output.json
-            exit 1
-          fi
-          
-          echo "Build ID: $BUILD_ID"
-          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-          
-          # Wait for build to complete (poll every 30 seconds, max 40 minutes)
-          echo "Waiting for build to complete..."
-          MAX_ATTEMPTS=80
-          ATTEMPT=0
-          
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            sleep 30
-            ATTEMPT=$((ATTEMPT + 1))
+          (async () => {
+            const profile = process.env.PROFILE;
+            console.log(`Starting EAS build for profile: ${profile}`);
             
-            BUILD_STATUS=$(npx eas-cli build:view $BUILD_ID --json 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+            // Start build
+            let buildOutput;
+            try {
+              buildOutput = execSync(
+                `npx eas-cli build --platform android --profile ${profile} --non-interactive --json`,
+                { encoding: 'utf8', stdio: 'pipe' }
+              );
+            } catch (error) {
+              console.error('Build command failed:', error.message);
+              if (error.stdout) console.log('STDOUT:', error.stdout);
+              if (error.stderr) console.error('STDERR:', error.stderr);
+              process.exit(1);
+            }
             
-            echo "Attempt $ATTEMPT: Build status is $BUILD_STATUS"
+            // Parse build ID
+            let buildData;
+            try {
+              buildData = JSON.parse(buildOutput.trim());
+            } catch (e) {
+              console.error('Failed to parse build output as JSON:', buildOutput);
+              process.exit(1);
+            }
             
-            if [ "$BUILD_STATUS" = "finished" ]; then
-              echo "Build completed successfully!"
-              break
-            elif [ "$BUILD_STATUS" = "errored" ] || [ "$BUILD_STATUS" = "canceled" ]; then
-              echo "Build failed with status: $BUILD_STATUS"
-              npx eas-cli build:view $BUILD_ID --json
-              exit 1
-            fi
-          done
-          
-          if [ "$BUILD_STATUS" != "finished" ]; then
-            echo "Build did not complete within timeout"
-            exit 1
-          fi
+            const buildId = buildData.id || buildData.buildId || buildData.build?.id;
+            if (!buildId) {
+              console.error('Build ID not found in output:', JSON.stringify(buildData, null, 2));
+              process.exit(1);
+            }
+            
+            console.log(`Build ID: ${buildId}`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_id=${buildId}\n`);
+            
+            // Wait for build to complete (poll every 30 seconds, max 40 minutes)
+            console.log('Waiting for build to complete...');
+            const maxAttempts = 80;
+            let attempt = 0;
+            let buildStatus = 'in-progress';
+            
+            while (attempt < maxAttempts && buildStatus !== 'finished') {
+              if (attempt > 0) {
+                await sleep(30000);
+              }
+              attempt++;
+              
+              try {
+                const statusOutput = execSync(
+                  `npx eas-cli build:view ${buildId} --json`,
+                  { encoding: 'utf8', stdio: 'pipe' }
+                );
+                const statusData = JSON.parse(statusOutput.trim());
+                buildStatus = statusData.status || statusData.build?.status || 'unknown';
+                console.log(`Attempt ${attempt}: Build status is ${buildStatus}`);
+                
+                if (buildStatus === 'finished') {
+                  console.log('Build completed successfully!');
+                  break;
+                } else if (buildStatus === 'errored' || buildStatus === 'canceled') {
+                  console.error(`Build failed with status: ${buildStatus}`);
+                  console.log(JSON.stringify(statusData, null, 2));
+                  process.exit(1);
+                }
+              } catch (error) {
+                console.warn(`Failed to check build status (attempt ${attempt}):`, error.message);
+              }
+            }
+            
+            if (buildStatus !== 'finished') {
+              console.error('Build did not complete within timeout');
+              process.exit(1);
+            }
+          })().catch(err => {
+            console.error('Unhandled error:', err);
+            process.exit(1);
+          });
+          NODE
 
       - name: Download artifact (${{ matrix.profile }})
         env:
           PROFILE: ${{ matrix.profile }}
           BUILD_ID: ${{ steps.build.outputs.build_id }}
         run: |
-          set -e
-          mkdir -p artifacts/${PROFILE}
+          node <<'NODE'
+          const { execSync } = require('child_process');
+          const fs = require('fs');
+          const path = require('path');
           
-          # Get build details
-          BUILD_JSON=$(npx eas-cli build:view $BUILD_ID --json)
-          echo "$BUILD_JSON" > build-details.json
+          const profile = process.env.PROFILE;
+          const buildId = process.env.BUILD_ID;
           
-          # Extract download URL
-          URL=$(echo "$BUILD_JSON" | grep -o '"buildUrl":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
-          if [ -z "$URL" ]; then
-            URL=$(echo "$BUILD_JSON" | grep -o '"applicationArchiveUrl":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
-          fi
+          if (!buildId) {
+            console.error('Build ID not provided');
+            process.exit(1);
+          }
           
-          if [ -z "$URL" ]; then
-            echo "Failed to get download URL"
-            cat build-details.json
-            exit 1
-          fi
+          // Get build details
+          let buildData;
+          try {
+            const output = execSync(
+              `npx eas-cli build:view ${buildId} --json`,
+              { encoding: 'utf8', stdio: 'pipe' }
+            );
+            buildData = JSON.parse(output.trim());
+          } catch (error) {
+            console.error('Failed to get build details:', error.message);
+            process.exit(1);
+          }
           
-          echo "Download URL: $URL"
+          // Extract download URL
+          const url = buildData.artifacts?.buildUrl || 
+                     buildData.artifacts?.applicationArchiveUrl || 
+                     buildData.buildUrl || 
+                     buildData.applicationArchiveUrl;
           
-          # Determine file extension
-          if echo "$URL" | grep -q "\.apk"; then
-            EXT="apk"
-          else
-            EXT="aab"
-          fi
+          if (!url) {
+            console.error('Download URL not found in build data:', JSON.stringify(buildData, null, 2));
+            process.exit(1);
+          }
           
-          OUT_FILE="artifacts/${PROFILE}/app.${EXT}"
-          curl -L "$URL" -o "$OUT_FILE"
-          echo "Downloaded to: $OUT_FILE"
+          console.log(`Download URL: ${url}`);
+          
+          // Determine file extension
+          const ext = url.includes('.apk') ? 'apk' : 'aab';
+          const outDir = path.join('artifacts', profile);
+          const outFile = path.join(outDir, `app.${ext}`);
+          
+          // Create directory
+          if (!fs.existsSync(outDir)) {
+            fs.mkdirSync(outDir, { recursive: true });
+          }
+          
+          // Download file
+          try {
+            execSync(`curl -L "${url}" -o "${outFile}"`, { stdio: 'inherit' });
+            console.log(`Downloaded to: ${outFile}`);
+          } catch (error) {
+            console.error('Failed to download artifact:', error.message);
+            process.exit(1);
+          }
+          NODE
 
       - name: Upload artifact (${{ matrix.profile }})
         uses: actions/upload-artifact@v4
